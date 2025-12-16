@@ -1,7 +1,7 @@
 #include <Python.h>
 #include <structmember.h>
 
-#include "../kernels/ops.h" 
+#include "ops.h" 
 #include "../core/memory.h"
 
 typedef struct {
@@ -98,7 +98,7 @@ static PyMethodDef _Tensor_methods[] = {
 
 static PyTypeObject _TensorType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "ember._core._Tensor",
+    .tp_name = "ember._core._tensor._Tensor",
     .tp_basicsize = sizeof(_Tensor),
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_members = _Tensor_members,
@@ -108,21 +108,25 @@ static PyTypeObject _TensorType = {
     .tp_methods = _Tensor_methods,
 };
 
-static PyModuleDef core_module = {
+static PyModuleDef tensor_module = {
     PyModuleDef_HEAD_INIT,
-    .m_name = "ember._core",
-    .m_doc = "Ember Core Backend",
+    .m_name = "ember._core._tensor",
+    .m_doc = "Ember Tensor backend",
     .m_size = -1,
 };
 
-PyMODINIT_FUNC PyInit__core(void) {
-    PyObject* m;
+PyMODINIT_FUNC PyInit__tensor(void) {
     if (PyType_Ready(&_TensorType) < 0) return NULL;
-    
-    m = PyModule_Create(&core_module);
-    if (m == NULL) return NULL;
+
+    PyObject* m = PyModule_Create(&tensor_module);
+    if (!m) return NULL;
 
     Py_INCREF(&_TensorType);
-    PyModule_AddObject(m, "_Tensor", (PyObject*)&_TensorType);
+    if (PyModule_AddObject(m, "_Tensor", (PyObject*)&_TensorType) < 0) {
+        Py_DECREF(&_TensorType);
+        Py_DECREF(m);
+        return NULL;
+    }
+
     return m;
 }
