@@ -1,4 +1,4 @@
-from . import _core 
+from ember._core import _Tensor
 
 class Tensor:
     def __init__(self, data, _core=None):
@@ -9,7 +9,7 @@ class Tensor:
 
         if isinstance(data, list):
             size = len(data)
-            self._core = _core._CudaTensor(size) 
+            self._core = _Tensor(size) 
             self._core.copy_from_list(data)
             self.shape = (size,)
         else:
