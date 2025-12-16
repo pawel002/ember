@@ -1,2 +1,10 @@
-# ember
-Ember is a lightweight Deep Learning package with C CUDA implementations.
+
+![](figures/ember.png)
+
+---
+
+Ember is a lightweight deep learning Python package with C CUDA implementations.
+
+### Usage
+
+Simply 
