@@ -20,6 +20,17 @@ def test_tensor_allocation(data, shape):
     assert t.shape == shape
     assert t.to_cpu() == data
 
+@pytest.mark.parametrize("data", [
+    [[1.0, 2.0, 3.0], [1.0, 2.0]],
+    [
+        [[1.0, 2.0, 3.0], [4.0, 5.0]],
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    ]
+])      
+def test_should_throw_for_irregular_arrays(data):
+    with pytest.raises(ValueError):
+        Tensor(data)
+
 def test_tensor_addition():
     t1 = Tensor([10.0, 20.0, 30.0])
     t2 = Tensor([1.0, 2.0, 3.0])
