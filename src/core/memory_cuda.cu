@@ -1,7 +1,8 @@
-#include "memory.h"
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include "memory.h"
 
 #define CHECK_CUDA(call) { \
     cudaError_t err = call; \
@@ -32,11 +33,11 @@ extern "C" {
         }
     }
 
-    void copy_to_gpu(void* dst_device, const void* src_host, size_t bytes) {
+    void copy_to_device(void* dst_device, const void* src_host, size_t bytes) {
         CHECK_CUDA(cudaMemcpy(dst_device, src_host, bytes, cudaMemcpyHostToDevice));
     }
 
-    void copy_to_cpu(void* dst_host, const void* src_device, size_t bytes) {
+    void copy_from_device(void* dst_host, const void* src_device, size_t bytes) {
         CHECK_CUDA(cudaMemcpy(dst_host, src_device, bytes, cudaMemcpyDeviceToHost));
     }
 }

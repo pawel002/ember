@@ -7,10 +7,10 @@
 extern "C" {
 #endif
 
-    void* alloc_gpu(size_t bytes);
-    void free_gpu(void* ptr);
-    void copy_to_gpu(void* dst_device, const void* src_host, size_t bytes);
-    void copy_to_cpu(void* dst_host, const void* src_device, size_t bytes);
+    void* alloc_memory(size_t bytes);
+    void free_memory(void* ptr);
+    void copy_to_device(void* dst_device, const void* src_host, size_t bytes);
+    void copy_from_device(void* dst_host, const void* src_device, size_t bytes);
 
 #ifdef __cplusplus
 }

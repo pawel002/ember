@@ -15,7 +15,7 @@ extern "C" {
      * @param out  Pointer to result array on GPU (must be allocated)
      * @param size Number of elements
      */
-    void launch_add(const float* a, const float* b, float* out, int size);
+    void add(const float* a, const float* b, float* out, int size);
 
 #ifdef __cplusplus
 }

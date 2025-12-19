@@ -6,11 +6,18 @@ def assert_close(actual, expected, tol=1e-5):
     for a, e in zip(actual, expected):
         assert abs(a - e) < tol, f"Mismatch: {a} != {e}"
 
-def test_tensor_allocation():
-    data = [1.0, 2.0, 3.0]
+@pytest.mark.parametrize("data, shape", [
+    ([1.0, 2.0, 3.0], (3,)),
+    ([[1.0, 2.0, 3.0]], (1, 3,)),
+    ([
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    ], (2, 2, 3,))
+])                      
+def test_tensor_allocation(data, shape):
     t = Tensor(data)
-    
-    assert t.shape == (3,)
+
+    assert t.shape == shape
     assert t.to_cpu() == data
 
 def test_tensor_addition():

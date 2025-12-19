@@ -1,6 +1,7 @@
 #include <Python.h>
 #include <structmember.h>
 
+#include "tensor_helpers.h"
 #include "ops.h" 
 #include "../core/memory.h"
 
@@ -12,7 +13,7 @@ typedef struct {
 
 static void _Tensor_dealloc(_Tensor* self) {
     if (self->d_ptr) {
-        free_gpu(self->d_ptr);
+        free_memory(self->d_ptr);
     }
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
@@ -24,7 +25,7 @@ static int _Tensor_init(_Tensor* self, PyObject* args, PyObject* kwds) {
     }
     
     self->size = size;
-    self->d_ptr = alloc_gpu(size * sizeof(float));
+    self->d_ptr = alloc_memory(size * sizeof(float));
     
     if (self->d_ptr == NULL) {
         PyErr_SetString(PyExc_MemoryError, "Failed to allocate GPU memory");
@@ -40,7 +41,7 @@ static PyObject* _Tensor_add(_Tensor* self, PyObject* args) {
     _Tensor* other = (_Tensor*)other_obj;
 
     if (self->size != other->size) {
-        PyErr_SetString(PyExc_ValueError, "Size mismatch");
+        PyErr_SetString(PyExc_ValueError, "Backend size mismatch");
         return NULL;
     }
 
@@ -48,9 +49,9 @@ static PyObject* _Tensor_add(_Tensor* self, PyObject* args) {
     if (!result) return NULL;
     
     result->size = self->size;
-    result->d_ptr = alloc_gpu(self->size * sizeof(float));
+    result->d_ptr = alloc_memory(self->size * sizeof(float));
 
-    launch_add(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
+    add(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
 
     return (PyObject*)result;
 }
@@ -66,22 +67,60 @@ static PyObject* _Tensor_copy_from_list(_Tensor* self, PyObject* args) {
         temp_host[i] = (float)PyFloat_AsDouble(item);
     }
 
-    copy_to_gpu(self->d_ptr, temp_host, self->size * sizeof(float));
+    copy_to_device(self->d_ptr, temp_host, self->size * sizeof(float));
     free(temp_host);
     
     Py_RETURN_NONE;
 }
 
-static PyObject* _Tensor_to_list(_Tensor* self, PyObject* Py_UNUSED(ignored)) {
-    float* temp_host = (float*)malloc(self->size * sizeof(float));
-    copy_to_cpu(temp_host, self->d_ptr, self->size * sizeof(float));
+static PyObject* _Tensor_to_list(_Tensor* self, PyObject* args) {
+    PyObject* shape_tuple;
 
-    PyObject* list = PyList_New(self->size);
-    for (int i=0; i<self->size; i++) {
-        PyList_SetItem(list, i, PyFloat_FromDouble(temp_host[i]));
+    if (!PyArg_ParseTuple(args, "O!", &PyTuple_Type, &shape_tuple)) {
+        return NULL;
     }
+
+    Py_ssize_t ndim = PyTuple_Size(shape_tuple);
+    long* c_dims = (long*)malloc(ndim * sizeof(long));
+    long total_elements = 1;
+
+    for (Py_ssize_t i = 0; i < ndim; i++) {
+        PyObject* item = PyTuple_GetItem(shape_tuple, i);
+        long dim = PyLong_AsLong(item);
+        
+        if (dim < 0) {
+            free(c_dims);
+            PyErr_SetString(PyExc_ValueError, "Dimensions cannot be negative");
+            return NULL;
+        }
+        
+        c_dims[i] = dim;
+        total_elements *= dim;
+    }
+
+    if (total_elements != self->size) {
+        free(c_dims);
+        PyErr_Format(PyExc_ValueError, 
+            "Shape mismatch: Tensor has %d elements, but requested shape requires %ld", 
+            self->size, total_elements);
+        return NULL;
+    }
+
+    float* temp_host = (float*)malloc(self->size * sizeof(float));
+    if (!temp_host) {
+        free(c_dims);
+        return PyErr_NoMemory();
+    }
+
+    copy_from_device(temp_host, self->d_ptr, self->size * sizeof(float));
+
+    int offset = 0;
+    PyObject* result = build_nested_list(temp_host, c_dims, (int)ndim, 0, &offset);
+
     free(temp_host);
-    return list;
+    free(c_dims);
+
+    return result;
 }
 
 static PyMemberDef _Tensor_members[] = {
@@ -92,7 +131,7 @@ static PyMemberDef _Tensor_members[] = {
 static PyMethodDef _Tensor_methods[] = {
     {"_add", (PyCFunction)_Tensor_add, METH_VARARGS, "Low level add"},
     {"copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data"},
-    {"to_list", (PyCFunction)_Tensor_to_list, METH_NOARGS, "Read data"},
+    {"to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Read data"},
     {NULL}
 };
 
