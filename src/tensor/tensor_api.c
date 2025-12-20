@@ -56,6 +56,28 @@ static PyObject* _Tensor_add(_Tensor* self, PyObject* args) {
     return (PyObject*)result;
 }
 
+static PyObject* _Tensor_subtract(_Tensor* self, PyObject* args) {
+    PyObject* other_obj;
+    if (!PyArg_ParseTuple(args, "O", &other_obj)) return NULL;
+
+    _Tensor* other = (_Tensor*)other_obj;
+
+    if (self->size != other->size) {
+        PyErr_SetString(PyExc_ValueError, "Backend size mismatch");
+        return NULL;
+    }
+
+    _Tensor* result = (_Tensor*)Py_TYPE(self)->tp_alloc(Py_TYPE(self), 0);
+    if (!result) return NULL;
+    
+    result->size = self->size;
+    result->d_ptr = alloc_memory(self->size * sizeof(float));
+
+    subtract(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
+
+    return (PyObject*)result;
+}
+
 static PyObject* _Tensor_copy_from_list(_Tensor* self, PyObject* args) {
     PyObject* py_list;
     if (!PyArg_ParseTuple(args, "O!", &PyList_Type, &py_list)) return NULL;
@@ -130,6 +152,7 @@ static PyMemberDef _Tensor_members[] = {
 
 static PyMethodDef _Tensor_methods[] = {
     {"_add", (PyCFunction)_Tensor_add, METH_VARARGS, "Low level add"},
+    {"_subtract", (PyCFunction)_Tensor_subtract, METH_VARARGS, "Low level subtraction"},
     {"copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data"},
     {"to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Read data"},
     {NULL}

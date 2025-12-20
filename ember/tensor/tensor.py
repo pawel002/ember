@@ -36,11 +36,21 @@ class Tensor:
 
     def __add__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
-            raise TypeError(f"Unsupported operand type(s) for +: 'Tensor' and '{type(other).__name__}'")
+            raise TypeError(f"Unsupported operand type(s) for +: Tensor and '{type(other).__name__}'")
             
         result_core = self._core._add(other._core)
         result_shape = self.shape 
         result_dtype = self.dtype 
+
+        return Tensor._from_core(result_core, result_shape, result_dtype)
+    
+    def __sub__(self, other: Tensor) -> Tensor:
+        if not isinstance(other, Tensor):
+            raise TypeError(f"Unsupported operand type(s) for -: Tensor and '{type(other).__name__}'")
+            
+        result_core = self._core._subtract(other._core)
+        result_shape = self.shape
+        result_dtype = self.dtype
 
         return Tensor._from_core(result_core, result_shape, result_dtype)
 
