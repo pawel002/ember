@@ -53,6 +53,16 @@ class Tensor:
         result_dtype = self.dtype
 
         return Tensor._from_core(result_core, result_shape, result_dtype)
+    
+    def __mul__(self, other: Tensor) -> Tensor:
+        if not isinstance(other, Tensor):
+            raise TypeError(f"Unsupported operand type(s) for *: Tensor and '{type(other).__name__}'")
+            
+        result_core = self._core._multiply_elementwise(other._core)
+        result_shape = self.shape
+        result_dtype = self.dtype
+
+        return Tensor._from_core(result_core, result_shape, result_dtype)
 
     def to_cpu(self) -> List[Types]:
         return self._core.to_list(self.shape)

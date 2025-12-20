@@ -49,6 +49,15 @@ def test_tensor_subtraction():
     assert t3.shape == (3,)
     assert_close(t3.to_cpu(), [9.0, 18.0, 27.0])
 
+def test_tensor_elementwise_multiplicatoin():
+    t1 = Tensor([10.0, 20.0, 30.0])
+    t2 = Tensor([1.0, 2.0, 3.0])
+    
+    t3 = t1 * t2
+    
+    assert t3.shape == (3,)
+    assert_close(t3.to_cpu(), [10.0, 40.0, 90.0])
+
 def test_tensor_large_data():
     size = 10_000
     data = [float(i) for i in range(size)]
