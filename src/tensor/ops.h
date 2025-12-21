@@ -8,6 +8,7 @@ extern "C" {
 void add(const float *a, const float *b, float *out, int size);
 void subtract(const float *a, const float *b, float *out, int size);
 void multiply_elementwise(const float *a, const float *b, float *out, int size);
+void simple_matmul(const float *a, const float *b, float *out, int n, int m, int k);
 void negate(float *a, int size);
 
 #ifdef __cplusplus

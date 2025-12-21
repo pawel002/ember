@@ -68,6 +68,31 @@ class Tensor:
 
         return Tensor._from_core(result_core, result_shape, result_dtype)
 
+    def __matmul__(self, other: Tensor) -> Tensor:
+        if not isinstance(other, Tensor):
+            raise TypeError(
+                f"Unsupported operand type(s) for @: Tensor and '{type(other).__name__}'"
+            )
+
+        if (dim_self := len(self.shape)) != 2:
+            raise ValueError(f"Matrix A has dim {dim_self}, expected is 2")
+
+        if (dim_other := len(other.shape)) != 2:
+            raise ValueError(f"Matrix B has dim {dim_other}, expected is 2")
+
+        if self.shape[1] != other.shape[0]:
+            raise ValueError(
+                f"Shape mismatch: {self.shape} cannot multiply {other.shape}"
+            )
+
+        result_core = self._core._simple_matmul(
+            other._core, self.shape[0], other.shape[1], self.shape[1]
+        )
+        result_shape = (self.shape[0], other.shape[1])
+        result_dtype = self.dtype
+
+        return Tensor._from_core(result_core, result_shape, result_dtype)
+
     def __neg__(self):
         self._core._negate()
         return self

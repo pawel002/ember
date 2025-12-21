@@ -51,6 +51,11 @@ static PyObject *_Tensor_add(_Tensor *self, PyObject *args)
     result->size = self->size;
     result->d_ptr = alloc_memory(self->size * sizeof(float));
 
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+
     add(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
 
     return (PyObject *)result;
@@ -73,6 +78,11 @@ static PyObject *_Tensor_subtract(_Tensor *self, PyObject *args)
 
     result->size = self->size;
     result->d_ptr = alloc_memory(self->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
 
     subtract(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
 
@@ -97,6 +107,11 @@ static PyObject *_Tensor_multiply_elementwise(_Tensor *self, PyObject *args)
     result->size = self->size;
     result->d_ptr = alloc_memory(self->size * sizeof(float));
 
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+
     multiply_elementwise(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
 
     return (PyObject *)result;
@@ -106,6 +121,45 @@ static PyObject *_Tensor_negate(_Tensor *self)
 {
     negate(self->d_ptr, self->size);
     Py_RETURN_NONE;
+}
+
+static PyObject *_Tensor_simple_matmul(_Tensor *self, PyObject *args)
+{
+    PyObject *other_obj;
+    int n, m, k;
+
+    if (!PyArg_ParseTuple(args, "Oiii", &other_obj, &n, &m, &k)) {
+        return NULL;
+    }
+
+    _Tensor *other = (_Tensor *)other_obj;
+
+    if (self->size != n * k) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch A: Underlying size %ld != requested %d x %d",
+                     self->size, n, k);
+        return NULL;
+    }
+
+    if (other->size != k * m) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch B: Underlying size %ld != requested %d x %d",
+                     other->size, k, m);
+        return NULL;
+    }
+
+    _Tensor *result = (_Tensor *)Py_TYPE(self)->tp_alloc(Py_TYPE(self), 0);
+    if (!result) return NULL;
+
+    result->size = n * m;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+
+    simple_matmul(self->d_ptr, other->d_ptr, result->d_ptr, n, m, k);
+
+    return (PyObject *)result;
 }
 
 static PyObject *_Tensor_copy_from_list(_Tensor *self, PyObject *args)
@@ -186,6 +240,8 @@ static PyMethodDef _Tensor_methods[] = {
     {"_multiply_elementwise", (PyCFunction)_Tensor_multiply_elementwise, METH_VARARGS,
      "Low level multiplication"},
     {"_negate", (PyCFunction)_Tensor_negate, METH_NOARGS, "Low level negation"},
+    {"_simple_matmul", (PyCFunction)_Tensor_simple_matmul, METH_VARARGS,
+     "Low level matrix multiplication"},
     {"copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data"},
     {"to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Read data"},
     {NULL}};

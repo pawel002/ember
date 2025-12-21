@@ -19,3 +19,16 @@ void negate(float *a, int size)
 {
     for (int i = 0; i < size; i++) a[i] *= -1;
 }
+
+void simple_matmul(const float *a, const float *b, float *out, int n, int m, int k)
+{
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < m; j++) {
+            float sum = 0.0f;
+            for (int l = 0; l < k; l++) {
+                sum += a[i * k + l] * b[l * m + j];
+            }
+            out[i * m + j] = sum;
+        }
+    }
+}
