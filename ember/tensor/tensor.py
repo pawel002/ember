@@ -63,6 +63,10 @@ class Tensor:
         result_dtype = self.dtype
 
         return Tensor._from_core(result_core, result_shape, result_dtype)
+    
+    def __neg__(self):
+        self._core._negate()
+        return self
 
     def to_cpu(self) -> List[Types]:
         return self._core.to_list(self.shape)
@@ -90,20 +94,6 @@ class Tensor:
         
         self.shape = new_shape
         return self
-
-    def _set_core(self, core: _Tensor) -> None:
-        """
-        This privates funtions in place sets the underlying _Tensor core
-        for public Tensor wrapper class.
-        """
-
-        if core is None:
-            raise ValueError("Core cannot be None")
-        
-        if not isinstance(core, _Tensor):
-            raise TypeError("Core needs to be of type _Tensor")
-        
-        self._core = core
 
     def __repr__(self):
         return f"Tensor({self.to_cpu()})"

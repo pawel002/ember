@@ -100,6 +100,11 @@ static PyObject* _Tensor_multiply_elementwise(_Tensor* self, PyObject* args) {
     return (PyObject*)result;
 }
 
+static PyObject* _Tensor_negate(_Tensor* self) {
+    negate(self->d_ptr, self->size);
+    Py_RETURN_NONE;
+}
+
 static PyObject* _Tensor_copy_from_list(_Tensor* self, PyObject* args) {
     PyObject* py_list;
     if (!PyArg_ParseTuple(args, "O!", &PyList_Type, &py_list)) return NULL;
@@ -176,6 +181,7 @@ static PyMethodDef _Tensor_methods[] = {
     {"_add", (PyCFunction)_Tensor_add, METH_VARARGS, "Low level add"},
     {"_subtract", (PyCFunction)_Tensor_subtract, METH_VARARGS, "Low level subtraction"},
     {"_multiply_elementwise", (PyCFunction)_Tensor_multiply_elementwise, METH_VARARGS, "Low level multiplication"},
+    {"_negate", (PyCFunction)_Tensor_negate, METH_NOARGS, "Low level negation"},
     {"copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data"},
     {"to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Read data"},
     {NULL}

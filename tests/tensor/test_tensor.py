@@ -58,6 +58,13 @@ def test_tensor_elementwise_multiplicatoin():
     assert t3.shape == (3,)
     assert_close(t3.to_cpu(), [10.0, 40.0, 90.0])
 
+def test_tensor_negation():
+    t = Tensor([1.0, 2.0, 3.0])
+    t = -t
+
+    assert t.shape == (3,)
+    assert_close(t.to_cpu(), [-1.0, -2.0, -3.0])
+
 def test_tensor_large_data():
     size = 10_000
     data = [float(i) for i in range(size)]
