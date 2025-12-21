@@ -1,10 +1,9 @@
 from typing import Any, List, Tuple, Union
 
-def extract_data_info(data: Any) -> Tuple[
-    Tuple[int, ...], 
-    type, 
-    List[Union[int, float]]
-]:
+
+def extract_data_info(
+    data: Any,
+) -> Tuple[Tuple[int, ...], type, List[Union[int, float]]]:
     """
     Analyzes a nested list to extract shape, inferred type, and flattened data.
     Returns:
@@ -20,42 +19,49 @@ def extract_data_info(data: Any) -> Tuple[
 
     # 2. Determine Expected Shape (The "Spine")
     # We trace data[0] -> data[0][0]... to determine what the shape SHOULD be.
-    shape = []
+    shape_agg = []
     temp = data
     while isinstance(temp, list):
         if len(temp) == 0:
-            shape.append(0)
+            shape_agg.append(0)
             break
-        shape.append(len(temp))
+        shape_agg.append(len(temp))
         temp = temp[0]
-    shape = tuple(shape)
-    
+
+    shape: Tuple = tuple(shape_agg)
+
     # 3. Recursive Traversal (Flatten + Validate + Type Check)
     flat_data = []
     has_float = False
-    
+
     def _recursive_scan(node: Any, depth: int):
         nonlocal has_float
 
         # CASE A: We expect a list at this depth (Internal Node)
         if depth < len(shape):
             if not isinstance(node, list):
-                raise ValueError(f"Ragged sequence: Expected list at depth {depth}, got scalar.")
-            
+                raise ValueError(
+                    f"Ragged sequence: Expected list at depth {depth}, got scalar."
+                )
+
             if len(node) != shape[depth]:
-                raise ValueError(f"Shape mismatch at depth {depth}. Expected length {shape[depth]}, got {len(node)}.")
-            
+                raise ValueError(
+                    f"Shape mismatch at depth {depth}. Expected length {shape[depth]}, got {len(node)}."
+                )
+
             for item in node:
                 _recursive_scan(item, depth + 1)
 
         # CASE B: We expect a scalar at this depth (Leaf Node)
         else:
             if isinstance(node, list):
-                raise ValueError(f"Ragged sequence: Expected scalar, got list (too deep).")
-            
+                raise ValueError(
+                    "Ragged sequence: Expected scalar, got list (too deep)."
+                )
+
             if isinstance(node, bool):
-                 raise TypeError("Boolean data is not supported.")
-            
+                raise TypeError("Boolean data is not supported.")
+
             if isinstance(node, float):
                 has_float = True
                 flat_data.append(node)
@@ -69,7 +75,7 @@ def extract_data_info(data: Any) -> Tuple[
 
     # 4. Final Type Promotion
     dtype = float if has_float else int
-    
+
     if dtype == float and not all(isinstance(x, float) for x in flat_data):
         flat_data = [float(x) for x in flat_data]
 

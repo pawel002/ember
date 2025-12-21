@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Literal, Any, Dict
+from typing import List, Literal, Any, Dict, Tuple
 
 import math
 
@@ -7,14 +7,12 @@ from ember._core import _Tensor
 from .tensor_utils import extract_data_info
 
 Types = Literal["int32", "float32"]
-_Types_lookup: Dict[type, Types] = {
-    int: "int32",
-    float: "float32"
-}
+_Types_lookup: Dict[type, Types] = {int: "int32", float: "float32"}
+
 
 class Tensor:
     dtype: Types
-    shape: List[int]
+    shape: Tuple[int, ...]
     _core: _Tensor
 
     def __init__(self, data: Any):
@@ -25,73 +23,77 @@ class Tensor:
         self._core.copy_from_list(flat_data)
 
     @classmethod
-    def _from_core(cls, core: _Tensor, shape: List[int], dtype: Types) -> Tensor:
+    def _from_core(cls, core: _Tensor, shape: Tuple[int, ...], dtype: Types) -> Tensor:
         obj = cls.__new__(cls)
-        
+
         obj._core = core
         obj.shape = shape
         obj.dtype = dtype
-        
+
         return obj
 
     def __add__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
-            raise TypeError(f"Unsupported operand type(s) for +: Tensor and '{type(other).__name__}'")
-            
+            raise TypeError(
+                f"Unsupported operand type(s) for +: Tensor and '{type(other).__name__}'"
+            )
+
         result_core = self._core._add(other._core)
-        result_shape = self.shape 
-        result_dtype = self.dtype 
+        result_shape = self.shape
+        result_dtype = self.dtype
 
         return Tensor._from_core(result_core, result_shape, result_dtype)
-    
+
     def __sub__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
-            raise TypeError(f"Unsupported operand type(s) for -: Tensor and '{type(other).__name__}'")
-            
+            raise TypeError(
+                f"Unsupported operand type(s) for -: Tensor and '{type(other).__name__}'"
+            )
+
         result_core = self._core._subtract(other._core)
         result_shape = self.shape
         result_dtype = self.dtype
 
         return Tensor._from_core(result_core, result_shape, result_dtype)
-    
+
     def __mul__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
-            raise TypeError(f"Unsupported operand type(s) for *: Tensor and '{type(other).__name__}'")
-            
+            raise TypeError(
+                f"Unsupported operand type(s) for *: Tensor and '{type(other).__name__}'"
+            )
+
         result_core = self._core._multiply_elementwise(other._core)
         result_shape = self.shape
         result_dtype = self.dtype
 
         return Tensor._from_core(result_core, result_shape, result_dtype)
-    
+
     def __neg__(self):
         self._core._negate()
         return self
 
-    def to_cpu(self) -> List[Types]:
+    def to_cpu(self) -> List[Any]:
         return self._core.to_list(self.shape)
-    
-    def reshape(self, new_shape: List[int]) -> Tensor:
-        """
-        Modifies the shape of the vector in place, doesn't actually move memory.
-        """
 
+    def reshape(self, new_shape: Tuple[int, ...]) -> Tensor:
         total_elements = math.prod(self.shape)
 
         if -1 in new_shape:
             if new_shape.count(-1) > 1:
                 raise ValueError("Only one dimension can be -1 (inferred)")
-            
+
             known_prod = -1 * math.prod(new_shape)
             if total_elements % known_prod != 0:
-                raise ValueError(f"Cannot reshape size {total_elements} into {new_shape}")
-            
+                raise ValueError(
+                    f"Cannot reshape size {total_elements} into {new_shape}"
+                )
+
             inferred_dim = total_elements // known_prod
-            new_shape = [x if x != -1 else inferred_dim for x in new_shape]
+            new_shape = tuple([x if x != -1 else inferred_dim for x in new_shape])
 
         elif math.prod(new_shape) != total_elements:
-                raise ValueError(f"Cannot reshape size {total_elements} into {new_shape}")
-        
+            raise ValueError(f"Cannot reshape size {total_elements} into {new_shape}")
+
         self.shape = new_shape
         return self
 
