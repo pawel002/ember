@@ -1,4 +1,3 @@
-
 ![](figures/ember.png)
 
 ---
@@ -12,5 +11,7 @@ To install the package, run:
 ```bash
 git clone https://github.com/pawel002/ember
 cd ember
+uv sync
+source .venv/bin/activate
 uv pip install -e . --link-mode=copy
 ```

@@ -5,10 +5,14 @@
 #include "ops.h"
 #include "tensor_helpers.h"
 
+typedef void (*binary_elementwise_op_func)(const float *, const float *, float *, int);
+
 typedef struct {
     PyObject_HEAD void *d_ptr;
     int size;
 } _Tensor;
+
+static PyTypeObject _TensorType;
 
 static void _Tensor_dealloc(_Tensor *self)
 {
@@ -27,21 +31,26 @@ static int _Tensor_init(_Tensor *self, PyObject *args, PyObject *kwds)
     self->d_ptr = alloc_memory(size * sizeof(float));
 
     if (self->d_ptr == NULL) {
-        PyErr_SetString(PyExc_MemoryError, "Failed to allocate GPU memory");
+        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
         return -1;
     }
     return 0;
 }
 
-static PyObject *_Tensor_add(_Tensor *self, PyObject *args)
+static PyObject *impl_binary_op(_Tensor *self, PyObject *args, binary_elementwise_op_func op)
 {
     PyObject *other_obj;
     if (!PyArg_ParseTuple(args, "O", &other_obj)) return NULL;
 
+    if (!PyObject_TypeCheck(other_obj, &_TensorType)) {
+        PyErr_Format(PyExc_TypeError, "Expected _Tensor, got %.200s", Py_TYPE(other_obj)->tp_name);
+        return NULL;
+    }
+
     _Tensor *other = (_Tensor *)other_obj;
 
     if (self->size != other->size) {
-        PyErr_SetString(PyExc_ValueError, "Backend size mismatch");
+        PyErr_Format(PyExc_ValueError, "Size mismatch: %zd vs %zd", self->size, other->size);
         return NULL;
     }
 
@@ -53,68 +62,27 @@ static PyObject *_Tensor_add(_Tensor *self, PyObject *args)
 
     if (!result->d_ptr) {
         Py_DECREF(result);
-        return PyErr_NoMemory();
+        PyErr_SetString(PyExc_MemoryError, "Failed to allocate GPU memory");
+        return NULL;
     }
 
-    add(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
-
+    op(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
     return (PyObject *)result;
+}
+
+static PyObject *_Tensor_add(_Tensor *self, PyObject *args)
+{
+    return impl_binary_op(self, args, add);
 }
 
 static PyObject *_Tensor_subtract(_Tensor *self, PyObject *args)
 {
-    PyObject *other_obj;
-    if (!PyArg_ParseTuple(args, "O", &other_obj)) return NULL;
-
-    _Tensor *other = (_Tensor *)other_obj;
-
-    if (self->size != other->size) {
-        PyErr_SetString(PyExc_ValueError, "Backend size mismatch");
-        return NULL;
-    }
-
-    _Tensor *result = (_Tensor *)Py_TYPE(self)->tp_alloc(Py_TYPE(self), 0);
-    if (!result) return NULL;
-
-    result->size = self->size;
-    result->d_ptr = alloc_memory(self->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        return PyErr_NoMemory();
-    }
-
-    subtract(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
-
-    return (PyObject *)result;
+    return impl_binary_op(self, args, subtract);
 }
 
 static PyObject *_Tensor_multiply_elementwise(_Tensor *self, PyObject *args)
 {
-    PyObject *other_obj;
-    if (!PyArg_ParseTuple(args, "O", &other_obj)) return NULL;
-
-    _Tensor *other = (_Tensor *)other_obj;
-
-    if (self->size != other->size) {
-        PyErr_SetString(PyExc_ValueError, "Backend size mismatch");
-        return NULL;
-    }
-
-    _Tensor *result = (_Tensor *)Py_TYPE(self)->tp_alloc(Py_TYPE(self), 0);
-    if (!result) return NULL;
-
-    result->size = self->size;
-    result->d_ptr = alloc_memory(self->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        return PyErr_NoMemory();
-    }
-
-    multiply_elementwise(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
-
-    return (PyObject *)result;
+    return impl_binary_op(self, args, multiply_elementwise);
 }
 
 static PyObject *_Tensor_negate(_Tensor *self)
