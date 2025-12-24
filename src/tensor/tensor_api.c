@@ -7,12 +7,14 @@
 
 typedef void (*binary_elementwise_op_func)(const float *, const float *, float *, int);
 
+static PyTypeObject _TensorType;
+
 typedef struct {
     PyObject_HEAD void *d_ptr;
     int size;
 } _Tensor;
 
-static PyTypeObject _TensorType;
+// --- Internal Object Methods (Dealloc/Init/IO) ---
 
 static void _Tensor_dealloc(_Tensor *self)
 {
@@ -35,99 +37,6 @@ static int _Tensor_init(_Tensor *self, PyObject *args, PyObject *kwds)
         return -1;
     }
     return 0;
-}
-
-static PyObject *impl_binary_op(_Tensor *self, PyObject *args, binary_elementwise_op_func op)
-{
-    PyObject *other_obj;
-    if (!PyArg_ParseTuple(args, "O", &other_obj)) return NULL;
-
-    if (!PyObject_TypeCheck(other_obj, &_TensorType)) {
-        PyErr_Format(PyExc_TypeError, "Expected _Tensor, got %.200s", Py_TYPE(other_obj)->tp_name);
-        return NULL;
-    }
-
-    _Tensor *other = (_Tensor *)other_obj;
-
-    if (self->size != other->size) {
-        PyErr_Format(PyExc_ValueError, "Size mismatch: %zd vs %zd", self->size, other->size);
-        return NULL;
-    }
-
-    _Tensor *result = (_Tensor *)Py_TYPE(self)->tp_alloc(Py_TYPE(self), 0);
-    if (!result) return NULL;
-
-    result->size = self->size;
-    result->d_ptr = alloc_memory(self->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        PyErr_SetString(PyExc_MemoryError, "Failed to allocate GPU memory");
-        return NULL;
-    }
-
-    op(self->d_ptr, other->d_ptr, result->d_ptr, self->size);
-    return (PyObject *)result;
-}
-
-static PyObject *_Tensor_add(_Tensor *self, PyObject *args)
-{
-    return impl_binary_op(self, args, add);
-}
-
-static PyObject *_Tensor_subtract(_Tensor *self, PyObject *args)
-{
-    return impl_binary_op(self, args, subtract);
-}
-
-static PyObject *_Tensor_multiply_elementwise(_Tensor *self, PyObject *args)
-{
-    return impl_binary_op(self, args, multiply_elementwise);
-}
-
-static PyObject *_Tensor_negate(_Tensor *self)
-{
-    negate(self->d_ptr, self->size);
-    Py_RETURN_NONE;
-}
-
-static PyObject *_Tensor_simple_matmul(_Tensor *self, PyObject *args)
-{
-    PyObject *other_obj;
-    int n, m, k;
-
-    if (!PyArg_ParseTuple(args, "Oiii", &other_obj, &n, &m, &k)) {
-        return NULL;
-    }
-
-    _Tensor *other = (_Tensor *)other_obj;
-
-    if (self->size != n * k) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch A: Underlying size %ld != requested %d x %d",
-                     self->size, n, k);
-        return NULL;
-    }
-
-    if (other->size != k * m) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch B: Underlying size %ld != requested %d x %d",
-                     other->size, k, m);
-        return NULL;
-    }
-
-    _Tensor *result = (_Tensor *)Py_TYPE(self)->tp_alloc(Py_TYPE(self), 0);
-    if (!result) return NULL;
-
-    result->size = n * m;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        return PyErr_NoMemory();
-    }
-
-    simple_matmul(self->d_ptr, other->d_ptr, result->d_ptr, n, m, k);
-
-    return (PyObject *)result;
 }
 
 static PyObject *_Tensor_copy_from_list(_Tensor *self, PyObject *args)
@@ -199,37 +108,165 @@ static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
     return result;
 }
 
+// --- Standalone Module Functions ---
+
+static PyObject *impl_binary_op(PyObject *module, PyObject *args, binary_elementwise_op_func op)
+{
+    PyObject *obj_a;
+    PyObject *obj_b;
+
+    if (!PyArg_ParseTuple(args, "OO", &obj_a, &obj_b)) {
+        return NULL;
+    }
+
+    if (!PyObject_TypeCheck(obj_a, &_TensorType) || !PyObject_TypeCheck(obj_b, &_TensorType)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be of type _Tensor");
+        return NULL;
+    }
+
+    _Tensor *a = (_Tensor *)obj_a;
+    _Tensor *b = (_Tensor *)obj_b;
+
+    if (a->size != b->size) {
+        PyErr_Format(PyExc_ValueError, "Size mismatch: %d vs %d", a->size, b->size);
+        return NULL;
+    }
+
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) return NULL;
+
+    result->size = a->size;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
+        return NULL;
+    }
+
+    op(a->d_ptr, b->d_ptr, result->d_ptr, a->size);
+    return (PyObject *)result;
+}
+
+static PyObject *_tensor_add(PyObject *module, PyObject *args)
+{
+    return impl_binary_op(module, args, add);
+}
+
+static PyObject *_tensor_subtract(PyObject *module, PyObject *args)
+{
+    return impl_binary_op(module, args, subtract);
+}
+
+static PyObject *_tensor_multiply_elementwise(PyObject *module, PyObject *args)
+{
+    return impl_binary_op(module, args, multiply_elementwise);
+}
+
+static PyObject *_tensor_simple_matmul(PyObject *module, PyObject *args)
+{
+    PyObject *obj_a, *obj_b;
+    int n, m, k;
+
+    if (!PyArg_ParseTuple(args, "OOiii", &obj_a, &obj_b, &n, &m, &k)) {
+        return NULL;
+    }
+
+    if (!PyObject_TypeCheck(obj_a, &_TensorType) || !PyObject_TypeCheck(obj_b, &_TensorType)) {
+        PyErr_SetString(PyExc_TypeError, "Arguments must be _Tensor");
+        return NULL;
+    }
+
+    _Tensor *a = (_Tensor *)obj_a;
+    _Tensor *b = (_Tensor *)obj_b;
+
+    if (a->size != n * k) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d", a->size, n, k);
+        return NULL;
+    }
+    if (b->size != k * m) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch B: %d != %d x %d", b->size, k, m);
+        return NULL;
+    }
+
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) return NULL;
+
+    result->size = n * m;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+
+    simple_matmul(a->d_ptr, b->d_ptr, result->d_ptr, n, m, k);
+
+    return (PyObject *)result;
+}
+
+static PyObject *_tensor_negate(PyObject *module, PyObject *args)
+{
+    PyObject *obj;
+    if (!PyArg_ParseTuple(args, "O", &obj)) return NULL;
+
+    if (!PyObject_TypeCheck(obj, &_TensorType)) {
+        PyErr_SetString(PyExc_TypeError, "Argument must be a _Tensor");
+        return NULL;
+    }
+    _Tensor *a = (_Tensor *)obj;
+
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) return NULL;
+
+    result->size = a->size;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+
+    negate(a->d_ptr, result->d_ptr, a->size);
+
+    return (PyObject *)result;
+}
+
+// --- Method Tables ---
+// Methods attached to the _Tensor OBJECT (Instance methods)
+static PyMethodDef _Tensor_instance_methods[] = {
+    {"copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
+    {"to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Export data to list"},
+    {NULL}};
+
 static PyMemberDef _Tensor_members[] = {
     {"size", T_INT, offsetof(_Tensor, size), READONLY, "Size of the tensor"}, {NULL}};
 
-static PyMethodDef _Tensor_methods[] = {
-    {"_add", (PyCFunction)_Tensor_add, METH_VARARGS, "Low level add"},
-    {"_subtract", (PyCFunction)_Tensor_subtract, METH_VARARGS, "Low level subtraction"},
-    {"_multiply_elementwise", (PyCFunction)_Tensor_multiply_elementwise, METH_VARARGS,
-     "Low level multiplication"},
-    {"_negate", (PyCFunction)_Tensor_negate, METH_NOARGS, "Low level negation"},
-    {"_simple_matmul", (PyCFunction)_Tensor_simple_matmul, METH_VARARGS,
-     "Low level matrix multiplication"},
-    {"copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data"},
-    {"to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Read data"},
+// Methods attached to the MODULE (Standalone functions)
+static PyMethodDef module_methods[] = {
+    {"_add", (PyCFunction)_tensor_add, METH_VARARGS, "Add two tensors"},
+    {"_subtract", (PyCFunction)_tensor_subtract, METH_VARARGS, "Subtract two tensors"},
+    {"_multiply_elementwise", (PyCFunction)_tensor_multiply_elementwise, METH_VARARGS,
+     "Multiply two tensors"},
+    {"_negate", (PyCFunction)_tensor_negate, METH_VARARGS, "Negate a tensor"},
+    {"_matmul", (PyCFunction)_tensor_simple_matmul, METH_VARARGS, "Matrix multiplication"},
     {NULL}};
 
 static PyTypeObject _TensorType = {
     PyVarObject_HEAD_INIT(NULL, 0).tp_name = "ember._core._tensor._Tensor",
     .tp_basicsize = sizeof(_Tensor),
     .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "Internal Tensor Object",
+    .tp_methods = _Tensor_instance_methods,
     .tp_members = _Tensor_members,
     .tp_new = PyType_GenericNew,
     .tp_init = (initproc)_Tensor_init,
     .tp_dealloc = (destructor)_Tensor_dealloc,
-    .tp_methods = _Tensor_methods,
 };
 
 static PyModuleDef tensor_module = {
-    PyModuleDef_HEAD_INIT,
-    .m_name = "ember._core._tensor",
-    .m_doc = "Ember Tensor backend",
-    .m_size = -1,
+    PyModuleDef_HEAD_INIT, .m_name = "ember._core._tensor", .m_doc = "Ember Tensor backend",
+    .m_size = -1,          .m_methods = module_methods,
 };
 
 PyMODINIT_FUNC PyInit__tensor(void)

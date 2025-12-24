@@ -1,12 +1,20 @@
 from __future__ import annotations
-from typing import List, Literal, Any, Dict, Tuple
+from typing import List, Literal, Any, Dict, Tuple, Callable
 
 import math
 
-from ember._core import _Tensor
+from ember._core import (
+    _Tensor,
+    _add,
+    _subtract,
+    _matmul,
+    _multiply_elementwise,
+    _negate,
+)
 from .tensor_utils import extract_data_info
 
 Types = Literal["int32", "float32"]
+TensorBinaryOp = Callable[[_Tensor, _Tensor], _Tensor]
 _Types_lookup: Dict[type, Types] = {int: "int32", float: "float32"}
 
 
@@ -33,40 +41,13 @@ class Tensor:
         return obj
 
     def __add__(self, other: Tensor) -> Tensor:
-        if not isinstance(other, Tensor):
-            raise TypeError(
-                f"Unsupported operand type(s) for +: Tensor and '{type(other).__name__}'"
-            )
-
-        result_core = self._core._add(other._core)
-        result_shape = self.shape
-        result_dtype = self.dtype
-
-        return Tensor._from_core(result_core, result_shape, result_dtype)
+        return binary_op_wrapper(self, other, _add)
 
     def __sub__(self, other: Tensor) -> Tensor:
-        if not isinstance(other, Tensor):
-            raise TypeError(
-                f"Unsupported operand type(s) for -: Tensor and '{type(other).__name__}'"
-            )
-
-        result_core = self._core._subtract(other._core)
-        result_shape = self.shape
-        result_dtype = self.dtype
-
-        return Tensor._from_core(result_core, result_shape, result_dtype)
+        return binary_op_wrapper(self, other, _subtract)
 
     def __mul__(self, other: Tensor) -> Tensor:
-        if not isinstance(other, Tensor):
-            raise TypeError(
-                f"Unsupported operand type(s) for *: Tensor and '{type(other).__name__}'"
-            )
-
-        result_core = self._core._multiply_elementwise(other._core)
-        result_shape = self.shape
-        result_dtype = self.dtype
-
-        return Tensor._from_core(result_core, result_shape, result_dtype)
+        return binary_op_wrapper(self, other, _multiply_elementwise)
 
     def __matmul__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
@@ -85,8 +66,8 @@ class Tensor:
                 f"Shape mismatch: {self.shape} cannot multiply {other.shape}"
             )
 
-        result_core = self._core._simple_matmul(
-            other._core, self.shape[0], other.shape[1], self.shape[1]
+        result_core = _matmul(
+            self._core, other._core, self.shape[0], other.shape[1], self.shape[1]
         )
         result_shape = (self.shape[0], other.shape[1])
         result_dtype = self.dtype
@@ -94,8 +75,7 @@ class Tensor:
         return Tensor._from_core(result_core, result_shape, result_dtype)
 
     def __neg__(self):
-        self._core._negate()
-        return self
+        return Tensor._from_core(_negate(self._core), self.shape, self.dtype)
 
     def to_cpu(self) -> List[Any]:
         return self._core.to_list(self.shape)
@@ -124,3 +104,21 @@ class Tensor:
 
     def __repr__(self):
         return f"Tensor({self.to_cpu()})"
+
+
+def binary_op_wrapper(a: Tensor, b: Tensor, op: TensorBinaryOp) -> Tensor:
+    print(op)
+
+    if not isinstance(b, Tensor):
+        raise TypeError(
+            f"Unsupported operand type(s) for *: Tensor and '{type(b).__name__}'"
+        )
+
+    if not a.shape == b.shape:
+        raise ValueError(f"Shape mismatch {a.shape} != {b.shape}")
+
+    result_core = op(a._core, b._core)
+    result_shape = a.shape
+    result_dtype = a.dtype
+
+    return Tensor._from_core(result_core, result_shape, result_dtype)
