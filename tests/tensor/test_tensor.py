@@ -1,6 +1,8 @@
 import pytest
 from ember import Tensor
 
+import numpy as np
+
 
 def assert_close(actual, expected, tol=1e-5):
     assert len(actual) == len(expected)
@@ -45,6 +47,12 @@ def test_tensor_allocation(data, shape):
 
     assert t.shape == shape
     assert t.to_cpu() == data
+
+
+def test_tensor_allocation_from_numpy():
+    a = np.random.uniform(0, 1, (100, 100))
+    _ = Tensor.from_np(a)
+    assert True
 
 
 @pytest.mark.parametrize(

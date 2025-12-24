@@ -1,4 +1,12 @@
-from ._tensor import _Tensor, _add, _subtract, _matmul, _multiply_elementwise, _negate
+from ._tensor import (
+    _Tensor,
+    _add,
+    _subtract,
+    _matmul,
+    _multiply_elementwise,
+    _negate,
+    _from_numpy,
+)
 
 __all__ = [
     "_Tensor",
@@ -7,4 +15,5 @@ __all__ = [
     "_matmul",
     "_multiply_elementwise",
     "_negate",
+    "_from_numpy",
 ]

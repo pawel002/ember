@@ -5,6 +5,7 @@ import math
 
 from ember._core import (
     _Tensor,
+    _from_numpy,
     _add,
     _subtract,
     _matmul,
@@ -12,6 +13,9 @@ from ember._core import (
     _negate,
 )
 from .tensor_utils import extract_data_info
+
+from numpy.typing import NDArray
+import numpy as np
 
 Types = Literal["int32", "float32"]
 TensorBinaryOp = Callable[[_Tensor, _Tensor], _Tensor]
@@ -37,6 +41,17 @@ class Tensor:
         obj._core = core
         obj.shape = shape
         obj.dtype = dtype
+
+        return obj
+
+    @classmethod
+    def from_np(cls, array: NDArray) -> Tensor:
+        obj = cls.__new__(cls)
+
+        # for now force casted to f32
+        obj._core = _from_numpy(array.astype(np.float32))
+        obj.shape = tuple(array.shape)
+        obj.dtype = "float32"
 
         return obj
 

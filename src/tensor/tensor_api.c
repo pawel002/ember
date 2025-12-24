@@ -108,6 +108,54 @@ static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
     return result;
 }
 
+// --- Fancy innits (ie. from numpy)
+
+static PyObject *_tensor_from_numpy(PyObject *module, PyObject *args)
+{
+    PyObject *obj;
+
+    if (!PyArg_ParseTuple(args, "O", &obj)) {
+        return NULL;
+    }
+
+    Py_buffer view;
+    int flags = PyBUF_C_CONTIGUOUS | PyBUF_FORMAT;
+    if (PyObject_GetBuffer(obj, &view, flags) < 0) {
+        PyErr_SetString(PyExc_TypeError,
+                        "Object does not support the buffer protocol (is it a numpy array?)");
+        return NULL;
+    }
+
+    if (view.format != NULL && strcmp(view.format, "f") != 0) {
+        PyBuffer_Release(&view);
+        PyErr_Format(PyExc_TypeError,
+                     "Expected float32 ('f'), got '%s'. Use array.astype('float32') in Python.",
+                     view.format);
+        return NULL;
+    }
+
+    int num_elements = view.len / view.itemsize;
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) {
+        PyBuffer_Release(&view);
+        return NULL;
+    }
+
+    result->size = (int)num_elements;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        PyBuffer_Release(&view);
+        return PyErr_NoMemory();
+    }
+
+    copy_to_device(result->d_ptr, view.buf, result->size * sizeof(float));
+    PyBuffer_Release(&view);
+
+    return (PyObject *)result;
+}
+
 // --- Standalone Module Functions ---
 
 static PyObject *impl_binary_op(PyObject *module, PyObject *args, binary_elementwise_op_func op)
@@ -250,6 +298,8 @@ static PyMethodDef module_methods[] = {
      "Multiply two tensors"},
     {"_negate", (PyCFunction)_tensor_negate, METH_VARARGS, "Negate a tensor"},
     {"_matmul", (PyCFunction)_tensor_simple_matmul, METH_VARARGS, "Matrix multiplication"},
+    {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS,
+     "Create tensor from numpy array"},
     {NULL}};
 
 static PyTypeObject _TensorType = {
