@@ -1,20 +1,31 @@
 cmake_minimum_required(VERSION 3.18)
-
 project(ember LANGUAGES C CXX)
 
 if(NOT APPLE)
+  message(STATUS "Architecture supports CUDA, ember will use it as backend")
   enable_language(CUDA)
-  # Optional: Let CMake auto-detect the best GPU architecture for the host
   set(CMAKE_CUDA_ARCHITECTURES "native")
 endif()
 
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
 
-option(EMBER_INPLACE_BUILD
-       "Write built extension modules into ember/_core for local dev" OFF)
+# find numpy includes
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" -c "import numpy; print(numpy.get_include())"
+  OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+if(NOT NUMPY_INCLUDE_DIR)
+  message(
+    FATAL_ERROR
+      "NumPy include directory not found. Please ensure numpy is installed in the python environment: ${Python_EXECUTABLE}"
+  )
+else()
+  message(STATUS "Found NumPy include path: ${NUMPY_INCLUDE_DIR}")
+endif()
+
 set(EMBER_PYCORE_DIR "${CMAKE_SOURCE_DIR}/ember/_core")
 
-# Helper, filers CUDA for windows and linux and pure C for macos
 macro(filter_backend_sources source_list)
   if(APPLE)
     list(FILTER ${source_list} EXCLUDE REGEX "_cuda\\.cu$")
@@ -34,6 +45,7 @@ filter_backend_sources(EMBER_COMMON_SOURCES)
 add_library(ember_native STATIC ${EMBER_COMMON_SOURCES})
 set_target_properties(ember_native PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(ember_native PUBLIC "${CMAKE_SOURCE_DIR}/src")
+target_include_directories(ember_native PRIVATE ${NUMPY_INCLUDE_DIR})
 
 if(NOT APPLE)
   set_target_properties(ember_native PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
@@ -66,14 +78,9 @@ function(add_ember_extension target_name output_basename module_dir entry_file)
   set_target_properties(${target_name}
                         PROPERTIES PREFIX "" OUTPUT_NAME "${output_basename}")
 
-  if(EMBER_INPLACE_BUILD)
-    set_target_properties(
-      ${target_name} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${EMBER_PYCORE_DIR}"
-                                RUNTIME_OUTPUT_DIRECTORY "${EMBER_PYCORE_DIR}")
-  endif()
-
   target_link_libraries(${target_name} PRIVATE Python::Module ember_native)
-  target_include_directories(${target_name} PRIVATE "${CMAKE_SOURCE_DIR}/src")
+  target_include_directories(${target_name} PRIVATE "${CMAKE_SOURCE_DIR}/src"
+                                                    ${NUMPY_INCLUDE_DIR})
 
   # CUDA flags
   if(NOT APPLE)

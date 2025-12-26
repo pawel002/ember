@@ -1,4 +1,5 @@
 #include <Python.h>
+#include <numpy/arrayobject.h>
 #include <structmember.h>
 
 #include "../core/memory.h"
@@ -106,6 +107,25 @@ static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
     free(c_dims);
 
     return result;
+}
+
+static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
+{
+    import_array();
+    npy_intp dims[1];
+    dims[0] = self->size;
+
+    int type_num = NPY_FLOAT;
+    PyObject *arr = PyArray_SimpleNew(1, dims, type_num);
+
+    if (arr == NULL) {
+        return NULL;
+    }
+
+    void *dst = PyArray_DATA((PyArrayObject *)arr);
+    copy_from_device(dst, self->d_ptr, (size_t)self->size * sizeof(float));
+
+    return arr;
 }
 
 // --- Fancy innits (ie. from numpy)
@@ -283,8 +303,9 @@ static PyObject *_tensor_negate(PyObject *module, PyObject *args)
 // --- Method Tables ---
 // Methods attached to the _Tensor OBJECT (Instance methods)
 static PyMethodDef _Tensor_instance_methods[] = {
-    {"copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
-    {"to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Export data to list"},
+    {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
+    {"_to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Export data to list"},
+    {"_to_np", (PyCFunction)_Tensor_to_np, METH_VARARGS, "Copy to np array"},
     {NULL}};
 
 static PyMemberDef _Tensor_members[] = {

@@ -32,7 +32,7 @@ class Tensor:
         self.shape = shape
         self.dtype = _Types_lookup.get(dtype_cls, "float32")
         self._core = _Tensor(math.prod(shape))
-        self._core.copy_from_list(flat_data)
+        self._core._copy_from_list(flat_data)
 
     @classmethod
     def _from_core(cls, core: _Tensor, shape: Tuple[int, ...], dtype: Types) -> Tensor:
@@ -92,8 +92,12 @@ class Tensor:
     def __neg__(self):
         return Tensor._from_core(_negate(self._core), self.shape, self.dtype)
 
+    def to_np(self):
+        result = self._core._to_np()
+        return result.reshape(self.shape)
+
     def to_cpu(self) -> List[Any]:
-        return self._core.to_list(self.shape)
+        return self._core._to_list(self.shape)
 
     def reshape(self, new_shape: Tuple[int, ...]) -> Tensor:
         total_elements = math.prod(self.shape)

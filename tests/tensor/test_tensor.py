@@ -144,6 +144,14 @@ def test_matmul_mismatch_raises_error():
         t1 @ t2
 
 
+def test_tensor_to_numpy_conversion():
+    arr = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    t = Tensor(arr)
+    t_cpu = t.to_np()
+
+    assert np.allclose(np.array(arr), t_cpu)
+
+
 def test_tensor_large_data():
     size = 10_000
     data = [float(i) for i in range(size)]
