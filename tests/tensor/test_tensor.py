@@ -152,6 +152,22 @@ def test_tensor_to_numpy_conversion():
     assert np.allclose(np.array(arr), t_cpu)
 
 
+def test_tensor_max():
+    t1 = Tensor([-1.0, 0.0, 0.01, 2.0])
+    t2 = t1.maximum(0)
+
+    assert_close(t2.to_cpu(), [0.0, 0.0, 0.01, 2.0])
+
+
+def test_tensor_tensor_max():
+    t1 = Tensor([-1.0, 0.0, 2.01, 2.0])
+    t2 = Tensor([2.0, 1.0, 0.01, 3.0])
+
+    t = t1.maximum(t2)
+
+    assert_close(t.to_cpu(), [2.0, 1.0, 2.01, 3.0])
+
+
 def test_tensor_large_data():
     size = 10_000
     data = [float(i) for i in range(size)]

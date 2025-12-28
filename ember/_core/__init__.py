@@ -6,6 +6,8 @@ from ._tensor import (
     _multiply_elementwise,
     _negate,
     _from_numpy,
+    _max_tensor,
+    _max_scalar,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "_multiply_elementwise",
     "_negate",
     "_from_numpy",
+    "_max_tensor",
+    "_max_scalar",
 ]

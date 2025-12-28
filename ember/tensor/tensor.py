@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Literal, Any, Dict, Tuple, Callable
+from typing import List, Literal, Any, Dict, Tuple, Callable, Union
 
 import math
 
@@ -11,6 +11,8 @@ from ember._core import (
     _matmul,
     _multiply_elementwise,
     _negate,
+    _max_tensor,
+    _max_scalar,
 )
 from .tensor_utils import extract_data_info
 
@@ -56,13 +58,13 @@ class Tensor:
         return obj
 
     def __add__(self, other: Tensor) -> Tensor:
-        return binary_op_wrapper(self, other, _add)
+        return _binary_op_wrapper(self, other, _add)
 
     def __sub__(self, other: Tensor) -> Tensor:
-        return binary_op_wrapper(self, other, _subtract)
+        return _binary_op_wrapper(self, other, _subtract)
 
     def __mul__(self, other: Tensor) -> Tensor:
-        return binary_op_wrapper(self, other, _multiply_elementwise)
+        return _binary_op_wrapper(self, other, _multiply_elementwise)
 
     def __matmul__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
@@ -91,6 +93,25 @@ class Tensor:
 
     def __neg__(self):
         return Tensor._from_core(_negate(self._core), self.shape, self.dtype)
+
+    def maximum(self, other: Union[Tensor, float]) -> Tensor:
+        result_core = None
+        if isinstance(other, Tensor):
+            if self.shape != other.shape:
+                raise ValueError(
+                    f"Shape mismatch: {self.shape} cannot multiply {other.shape}"
+                )
+            result_core = _max_tensor(self._core, other._core)
+
+        elif isinstance(other, (float, int)):
+            result_core = _max_scalar(self._core, float(other))
+
+        if result_core is None:
+            raise TypeError(
+                f"Unsupported operand type(s) for max(): Tensor and '{type(other).__name__}'"
+            )
+
+        return Tensor._from_core(result_core, self.shape, self.dtype)
 
     def to_np(self):
         result = self._core._to_np()
@@ -125,7 +146,7 @@ class Tensor:
         return f"Tensor({self.to_cpu()})"
 
 
-def binary_op_wrapper(a: Tensor, b: Tensor, op: TensorBinaryOp) -> Tensor:
+def _binary_op_wrapper(a: Tensor, b: Tensor, op: TensorBinaryOp) -> Tensor:
     print(op)
 
     if not isinstance(b, Tensor):

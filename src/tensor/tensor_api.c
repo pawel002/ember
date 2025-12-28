@@ -180,20 +180,10 @@ static PyObject *_tensor_from_numpy(PyObject *module, PyObject *args)
 
 static PyObject *impl_binary_op(PyObject *module, PyObject *args, binary_elementwise_op_func op)
 {
-    PyObject *obj_a;
-    PyObject *obj_b;
-
-    if (!PyArg_ParseTuple(args, "OO", &obj_a, &obj_b)) {
+    _Tensor *a, *b;
+    if (!PyArg_ParseTuple(args, "O!O!", &_TensorType, &a, &_TensorType, &b)) {
         return NULL;
     }
-
-    if (!PyObject_TypeCheck(obj_a, &_TensorType) || !PyObject_TypeCheck(obj_b, &_TensorType)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be of type _Tensor");
-        return NULL;
-    }
-
-    _Tensor *a = (_Tensor *)obj_a;
-    _Tensor *b = (_Tensor *)obj_b;
 
     if (a->size != b->size) {
         PyErr_Format(PyExc_ValueError, "Size mismatch: %d vs %d", a->size, b->size);
@@ -231,22 +221,44 @@ static PyObject *_tensor_multiply_elementwise(PyObject *module, PyObject *args)
     return impl_binary_op(module, args, multiply_elementwise);
 }
 
+static PyObject *_tensor_max_elementwise(PyObject *module, PyObject *args)
+{
+    return impl_binary_op(module, args, max_tensor);
+}
+
+static PyObject *_tensor_max_float(PyObject *module, PyObject *args)
+{
+    _Tensor *a;
+    float b;
+
+    if (!PyArg_ParseTuple(args, "O!f", &_TensorType, &a, &b)) {
+        return NULL;
+    }
+
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) return NULL;
+
+    result->size = a->size;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
+        return NULL;
+    }
+
+    max_scalar(a->d_ptr, b, result->d_ptr, a->size);
+    return (PyObject *)result;
+}
+
 static PyObject *_tensor_simple_matmul(PyObject *module, PyObject *args)
 {
-    PyObject *obj_a, *obj_b;
+    _Tensor *a, *b;
     int n, m, k;
 
-    if (!PyArg_ParseTuple(args, "OOiii", &obj_a, &obj_b, &n, &m, &k)) {
+    if (!PyArg_ParseTuple(args, "O!O!iii", &_TensorType, &a, &_TensorType, &b, &n, &m, &k)) {
         return NULL;
     }
-
-    if (!PyObject_TypeCheck(obj_a, &_TensorType) || !PyObject_TypeCheck(obj_b, &_TensorType)) {
-        PyErr_SetString(PyExc_TypeError, "Arguments must be _Tensor");
-        return NULL;
-    }
-
-    _Tensor *a = (_Tensor *)obj_a;
-    _Tensor *b = (_Tensor *)obj_b;
 
     if (a->size != n * k) {
         PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d", a->size, n, k);
@@ -275,14 +287,8 @@ static PyObject *_tensor_simple_matmul(PyObject *module, PyObject *args)
 
 static PyObject *_tensor_negate(PyObject *module, PyObject *args)
 {
-    PyObject *obj;
-    if (!PyArg_ParseTuple(args, "O", &obj)) return NULL;
-
-    if (!PyObject_TypeCheck(obj, &_TensorType)) {
-        PyErr_SetString(PyExc_TypeError, "Argument must be a _Tensor");
-        return NULL;
-    }
-    _Tensor *a = (_Tensor *)obj;
+    _Tensor *a;
+    if (!PyArg_ParseTuple(args, "O!", &_TensorType, &a)) return NULL;
 
     _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
     if (!result) return NULL;
@@ -313,14 +319,14 @@ static PyMemberDef _Tensor_members[] = {
 
 // Methods attached to the MODULE (Standalone functions)
 static PyMethodDef module_methods[] = {
-    {"_add", (PyCFunction)_tensor_add, METH_VARARGS, "Add two tensors"},
-    {"_subtract", (PyCFunction)_tensor_subtract, METH_VARARGS, "Subtract two tensors"},
-    {"_multiply_elementwise", (PyCFunction)_tensor_multiply_elementwise, METH_VARARGS,
-     "Multiply two tensors"},
-    {"_negate", (PyCFunction)_tensor_negate, METH_VARARGS, "Negate a tensor"},
-    {"_matmul", (PyCFunction)_tensor_simple_matmul, METH_VARARGS, "Matrix multiplication"},
-    {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS,
-     "Create tensor from numpy array"},
+    {"_add", (PyCFunction)_tensor_add, METH_VARARGS, "add T"},
+    {"_subtract", (PyCFunction)_tensor_subtract, METH_VARARGS, "subtract T"},
+    {"_multiply_elementwise", (PyCFunction)_tensor_multiply_elementwise, METH_VARARGS, "mult T"},
+    {"_negate", (PyCFunction)_tensor_negate, METH_VARARGS, "negate a T"},
+    {"_matmul", (PyCFunction)_tensor_simple_matmul, METH_VARARGS, "matmul T"},
+    {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS, "T from np"},
+    {"_max_tensor", (PyCFunction)_tensor_max_elementwise, METH_VARARGS, "max T vs T"},
+    {"_max_scalar", (PyCFunction)_tensor_max_float, METH_VARARGS, "max T vs float"},
     {NULL}};
 
 static PyTypeObject _TensorType = {

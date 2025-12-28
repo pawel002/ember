@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include "ops.h"
 
 void add(const float *a, const float *b, float *out, int size)
@@ -31,4 +33,14 @@ void simple_matmul(const float *a, const float *b, float *out, int n, int m, int
             out[i * m + j] = sum;
         }
     }
+}
+
+void max_tensor(const float *a, const float *b, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = fmaxf(a[i], b[i]);
+}
+
+void max_scalar(const float *a, const float b, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = fmaxf(a[i], b);
 }

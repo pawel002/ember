@@ -10,6 +10,8 @@ void subtract(const float *a, const float *b, float *out, int size);
 void multiply_elementwise(const float *a, const float *b, float *out, int size);
 void simple_matmul(const float *a, const float *b, float *out, int n, int m, int k);
 void negate(const float *a, float *b, int size);
+void max_tensor(const float *a, const float *b, float *out, int size);
+void max_scalar(const float *a, const float b, float *out, int size);
 
 #ifdef __cplusplus
 }
