@@ -147,7 +147,7 @@ class Tensor:
 
 def _binary_op_wrapper(
     a: Tensor,
-    b: Union[Tensor, float, int],
+    b: BinaryOpType,
     op_symbol: str,
     tensor_op: TensorBinaryOp,
     float_op: FloatBinaryOp,
