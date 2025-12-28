@@ -28,6 +28,11 @@ void min_tensor(const float *a, const float *b, float *out, int size)
     for (int i = 0; i < size; i++) out[i] = fminf(a[i], b[i]);
 }
 
+void gt_tensor(const float *a, const float *b, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = (a[i] > b[i]) ? 1.0f : 0.0f;
+}
+
 // scalar operators
 void add_scalar(const float *a, const float b, float *out, int size)
 {
@@ -52,6 +57,11 @@ void max_scalar(const float *a, const float b, float *out, int size)
 void min_scalar(const float *a, const float b, float *out, int size)
 {
     for (int i = 0; i < size; i++) out[i] = fminf(a[i], b);
+}
+
+void gt_scalar(const float *a, const float b, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = (a[i] > b) ? 1.0f : 0.0f;
 }
 
 // misc operators

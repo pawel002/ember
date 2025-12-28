@@ -12,7 +12,6 @@ class ReLU(Activation):
         self.y = x.maximum(0)
         return self.y
 
-    # TODO: fix
     def backward(self, grad_y: Tensor) -> Tensor:
         assert self.y is not None
-        return Tensor([1])
+        return grad_y * (self.y > 0)

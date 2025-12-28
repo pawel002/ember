@@ -5,17 +5,21 @@ import math
 
 from ember._core import (
     _Tensor,
-    _from_numpy,
     _add_tensor,
-    _add_scalar,
     _sub_tensor,
-    _sub_scalar,
     _mul_tensor,
-    _mul_scalar,
     _max_tensor,
+    _min_tensor,
+    _gt_tensor,
+    _add_scalar,
+    _sub_scalar,
+    _mul_scalar,
     _max_scalar,
+    _min_scalar,
+    _gt_scalar,
     _matmul,
     _negate,
+    _from_numpy,
 )
 from .tensor_utils import extract_data_info
 
@@ -71,6 +75,9 @@ class Tensor:
     def __mul__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "*", _mul_tensor, _mul_scalar)
 
+    def __gt__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, ">", _gt_tensor, _gt_scalar)
+
     def __matmul__(self, other: BinaryOpType) -> Tensor:
         if not isinstance(other, Tensor):
             raise TypeError(
@@ -101,6 +108,9 @@ class Tensor:
 
     def maximum(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "max()", _max_tensor, _max_scalar)
+
+    def minimum(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "min()", _min_tensor, _min_scalar)
 
     def to_np(self):
         result = self._core._to_np()
