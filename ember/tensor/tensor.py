@@ -6,13 +6,16 @@ import math
 from ember._core import (
     _Tensor,
     _from_numpy,
-    _add,
-    _subtract,
-    _matmul,
-    _multiply_elementwise,
-    _negate,
+    _add_tensor,
+    _add_scalar,
+    _sub_tensor,
+    _sub_scalar,
+    _mul_tensor,
+    _mul_scalar,
     _max_tensor,
     _max_scalar,
+    _matmul,
+    _negate,
 )
 from .tensor_utils import extract_data_info
 
@@ -21,6 +24,8 @@ import numpy as np
 
 Types = Literal["int32", "float32"]
 TensorBinaryOp = Callable[[_Tensor, _Tensor], _Tensor]
+FloatBinaryOp = Callable[[_Tensor, float], _Tensor]
+BinaryOpType = Union["Tensor", float, int]
 _Types_lookup: Dict[type, Types] = {int: "int32", float: "float32"}
 
 
@@ -57,16 +62,16 @@ class Tensor:
 
         return obj
 
-    def __add__(self, other: Tensor) -> Tensor:
-        return _binary_op_wrapper(self, other, _add)
+    def __add__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "+", _add_tensor, _add_scalar)
 
-    def __sub__(self, other: Tensor) -> Tensor:
-        return _binary_op_wrapper(self, other, _subtract)
+    def __sub__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "-", _sub_tensor, _sub_scalar)
 
-    def __mul__(self, other: Tensor) -> Tensor:
-        return _binary_op_wrapper(self, other, _multiply_elementwise)
+    def __mul__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "*", _mul_tensor, _mul_scalar)
 
-    def __matmul__(self, other: Tensor) -> Tensor:
+    def __matmul__(self, other: BinaryOpType) -> Tensor:
         if not isinstance(other, Tensor):
             raise TypeError(
                 f"Unsupported operand type(s) for @: Tensor and '{type(other).__name__}'"
@@ -94,24 +99,8 @@ class Tensor:
     def __neg__(self):
         return Tensor._from_core(_negate(self._core), self.shape, self.dtype)
 
-    def maximum(self, other: Union[Tensor, float]) -> Tensor:
-        result_core = None
-        if isinstance(other, Tensor):
-            if self.shape != other.shape:
-                raise ValueError(
-                    f"Shape mismatch: {self.shape} cannot multiply {other.shape}"
-                )
-            result_core = _max_tensor(self._core, other._core)
-
-        elif isinstance(other, (float, int)):
-            result_core = _max_scalar(self._core, float(other))
-
-        if result_core is None:
-            raise TypeError(
-                f"Unsupported operand type(s) for max(): Tensor and '{type(other).__name__}'"
-            )
-
-        return Tensor._from_core(result_core, self.shape, self.dtype)
+    def maximum(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "max()", _max_tensor, _max_scalar)
 
     def to_np(self):
         result = self._core._to_np()
@@ -146,19 +135,27 @@ class Tensor:
         return f"Tensor({self.to_cpu()})"
 
 
-def _binary_op_wrapper(a: Tensor, b: Tensor, op: TensorBinaryOp) -> Tensor:
-    print(op)
+def _binary_op_wrapper(
+    a: Tensor,
+    b: Union[Tensor, float, int],
+    op_symbol: str,
+    tensor_op: TensorBinaryOp,
+    float_op: FloatBinaryOp,
+) -> Tensor:
+    result_core = None
+    if isinstance(b, Tensor):
+        if a.shape != b.shape:
+            raise ValueError(
+                f"Shape mismatch: {a.shape} cannot {op_symbol} with {b.shape}"
+            )
+        result_core = tensor_op(a._core, b._core)
 
-    if not isinstance(b, Tensor):
+    elif isinstance(b, (float, int)):
+        result_core = float_op(a._core, float(b))
+
+    if result_core is None:
         raise TypeError(
-            f"Unsupported operand type(s) for *: Tensor and '{type(b).__name__}'"
+            f"Unsupported operand type(s) for {op_symbol}: Tensor and '{type(b).__name__}'"
         )
 
-    if not a.shape == b.shape:
-        raise ValueError(f"Shape mismatch {a.shape} != {b.shape}")
-
-    result_core = op(a._core, b._core)
-    result_shape = a.shape
-    result_dtype = a.dtype
-
-    return Tensor._from_core(result_core, result_shape, result_dtype)
+    return Tensor._from_core(result_core, a.shape, a.dtype)
