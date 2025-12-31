@@ -1,197 +1,132 @@
 import pytest
+import numpy as np
+import operator
+from contextlib import nullcontext as does_not_raise
+
 from ember import Tensor
 
-import numpy as np
 
+class TestTensorExhaustive:
+    BINARY_OPS = [
+        ("__add__", operator.add, np.add),
+        ("__sub__", operator.sub, np.subtract),
+        ("__mul__", operator.mul, np.multiply),
+        ("__gt__", operator.gt, np.greater),
+        ("maximum", lambda a, b: a.maximum(b), np.maximum),
+        ("minimum", lambda a, b: a.minimum(b), np.minimum),
+    ]
 
-def assert_close(actual, expected, tol=1e-5):
-    assert len(actual) == len(expected)
-    for a, e in zip(actual, expected):
-        assert abs(a - e) < tol, f"Mismatch: {a} != {e}"
+    def _assert_tensor_eq_np(self, tensor_res, np_res):
+        assert (
+            tensor_res.shape == np_res.shape
+        ), f"Shape Mismatch: Tensor {tensor_res.shape} vs NP {np_res.shape}"
 
+        tensor_data = tensor_res.to_np()
 
-def simple_python_matmul(a: list, b: list) -> list:
-    n = len(a)
-    k = len(a[0])
-    m = len(b[0])
+        if np_res.dtype == bool:
+            np.testing.assert_array_equal(tensor_data.astype(bool), np_res)
+        else:
+            np.testing.assert_allclose(tensor_data, np_res, rtol=1e-5, atol=1e-5)
 
-    result = [[0.0] * m for _ in range(n)]
+    @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
+    @pytest.mark.parametrize("shape", [(10,), (5, 5), (2, 3, 4)])
+    def test_binary_op_tensor_vs_tensor(self, method_name, py_op, np_op, shape):
+        np_a = np.random.randn(*shape).astype(np.float32)
+        np_b = np.random.randn(*shape).astype(np.float32)
 
-    for i in range(n):
-        for j in range(m):
-            for x in range(k):
-                result[i][j] += a[i][x] * b[x][j]
-    return result
+        t_a = Tensor.from_np(np_a)
+        t_b = Tensor.from_np(np_b)
 
+        if method_name.startswith("__"):
+            t_res = py_op(t_a, t_b)
+        else:
+            t_res = py_op(t_a, t_b)
 
-def flatten(lst):
-    return [item for sublist in lst for item in sublist]
+        np_res = np_op(np_a, np_b)
+        self._assert_tensor_eq_np(t_res, np_res)
 
+    @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
+    @pytest.mark.parametrize("scalar", [0.0, 1.0, -5.5, 100])
+    def test_binary_op_tensor_vs_scalar(self, method_name, py_op, np_op, scalar):
+        shape = (3, 3)
+        np_a = np.random.randn(*shape).astype(np.float32)
+        t_a = Tensor.from_np(np_a)
 
-@pytest.mark.parametrize(
-    "data, shape",
-    [
-        ([1.0, 2.0, 3.0], (3,)),
-        ([[1.0, 2.0, 3.0]], (1, 3)),
-        (
-            [
-                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
-                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
-            ],
-            (2, 2, 3),
-        ),
-    ],
-)
-def test_tensor_allocation(data, shape):
-    t = Tensor(data)
+        t_res = py_op(t_a, scalar)
+        np_res = np_op(np_a, scalar)
 
-    assert t.shape == shape
-    assert t.to_cpu() == data
+        self._assert_tensor_eq_np(t_res, np_res)
 
+    @pytest.mark.parametrize(
+        "shape_a, shape_b, expectation",
+        [
+            ((4, 5), (5, 3), does_not_raise()),
+            ((1, 1), (1, 1), does_not_raise()),
+            ((4, 5), (4, 3), pytest.raises(ValueError)),
+            ((4, 5, 2), (2, 3), pytest.raises(ValueError)),
+            ((4, 5), 5, pytest.raises(TypeError)),
+        ],
+    )
+    def test_matmul(self, shape_a, shape_b, expectation):
+        if isinstance(shape_b, int):
+            np_a = np.random.randn(*shape_a).astype(np.float32)
+            t_a = Tensor.from_np(np_a)
+            with expectation:
+                _ = t_a @ shape_b
+            return
 
-def test_tensor_allocation_from_numpy():
-    a = np.random.uniform(0, 1, (100, 100))
-    _ = Tensor.from_np(a)
-    assert True
+        np_a = np.random.randn(*shape_a).astype(np.float32)
+        np_b = np.random.randn(*shape_b).astype(np.float32)
+        t_a = Tensor.from_np(np_a)
+        t_b = Tensor.from_np(np_b)
 
+        with expectation:
+            t_res = t_a @ t_b
+            np_res = np_a @ np_b
+            self._assert_tensor_eq_np(t_res, np_res)
 
-@pytest.mark.parametrize(
-    "data",
-    [
-        [[1.0, 2.0, 3.0], [1.0, 2.0]],
-        [[[1.0, 2.0, 3.0], [4.0, 5.0]], [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]],
-    ],
-)
-def test_should_throw_for_irregular_arrays(data):
-    with pytest.raises(ValueError):
-        Tensor(data)
+    def test_negate(self):
+        np_a = np.random.randn(5, 5).astype(np.float32)
+        t_a = Tensor.from_np(np_a)
 
+        t_res = -t_a
+        np_res = -np_a
 
-def test_tensor_addition():
-    t1 = Tensor([10.0, 20.0, 30.0])
-    t2 = Tensor([1.0, 2.0, 3.0])
+        self._assert_tensor_eq_np(t_res, np_res)
 
-    t3 = t1 + t2
+    @pytest.mark.parametrize(
+        "start_shape, target_shape, valid",
+        [
+            ((2, 3), (3, 2), True),
+            ((2, 3), (6,), True),
+            ((2, 3), (-1,), True),
+            ((2, 3), (2, -1), True),
+            ((2, 3), (4, 4), False),
+            ((2, 3), (-1, -1), False),
+            ((6,), (2, 3), True),
+        ],
+    )
+    def test_reshape(self, start_shape, target_shape, valid):
+        np_a = np.arange(np.prod(start_shape)).reshape(start_shape).astype(np.float32)
+        t_a = Tensor.from_np(np_a)
 
-    assert t3.shape == (3,)
-    assert_close(t3.to_cpu(), [11.0, 22.0, 33.0])
+        if valid:
+            t_res = t_a.reshape(target_shape)
+            expected_np = np_a.reshape(target_shape)
 
+            assert t_res.shape == expected_np.shape
+            self._assert_tensor_eq_np(t_res, expected_np)
+        else:
+            with pytest.raises(ValueError):
+                t_a.reshape(target_shape)
 
-def test_tensor_subtraction():
-    t1 = Tensor([10.0, 20.0, 30.0])
-    t2 = Tensor([1.0, 2.0, 3.0])
+    def test_shape_mismatch_raises_error(self):
+        t_a = Tensor.from_np(np.zeros((2, 2)))
+        t_b = Tensor.from_np(np.zeros((3, 3)))
 
-    t3 = t1 - t2
-
-    assert t3.shape == (3,)
-    assert_close(t3.to_cpu(), [9.0, 18.0, 27.0])
-
-
-def test_tensor_elementwise_multiplicatoin():
-    t1 = Tensor([10.0, 20.0, 30.0])
-    t2 = Tensor([1.0, 2.0, 3.0])
-
-    t3 = t1 * t2
-
-    assert t3.shape == (3,)
-    assert_close(t3.to_cpu(), [10.0, 40.0, 90.0])
-
-
-def test_tensor_negation():
-    t = Tensor([1.0, 2.0, 3.0])
-    t = -t
-
-    assert t.shape == (3,)
-    assert_close(t.to_cpu(), [-1.0, -2.0, -3.0])
-
-
-@pytest.mark.parametrize(
-    "data_a, data_b, expected_shape",
-    [
-        (
-            [[1.0, 2.0], [3.0, 4.0]],
-            [[1.0, 0.0], [0.0, 1.0]],
-            (2, 2),
-        ),
-        (
-            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
-            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
-            (2, 2),
-        ),
-        ([[1.0, 2.0, 3.0]], [[1.0], [2.0], [3.0]], (1, 1)),
-    ],
-)
-def test_matmul_valid(data_a, data_b, expected_shape):
-    t1 = Tensor(data_a)
-    t2 = Tensor(data_b)
-
-    result = t1 @ t2
-
-    assert tuple(result.shape) == expected_shape
-
-    expected_data = simple_python_matmul(data_a, data_b)
-    flat_expected = flatten(expected_data)
-    flat_actual = flatten(result.to_cpu())
-
-    assert_close(flat_actual, flat_expected)
-
-
-def test_matmul_mismatch_raises_error():
-    t1 = Tensor([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]])
-    t2 = Tensor([[1.0, 1.0], [1.0, 1.0]])
-
-    with pytest.raises(ValueError, match="Shape mismatch"):
-        t1 @ t2
-
-
-def test_tensor_to_numpy_conversion():
-    arr = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-    t = Tensor(arr)
-    t_cpu = t.to_np()
-
-    assert np.allclose(np.array(arr), t_cpu)
-
-
-def test_tensor_max():
-    t1 = Tensor([-1.0, 0.0, 0.01, 2.0])
-    t2 = t1.maximum(0)
-
-    assert_close(t2.to_cpu(), [0.0, 0.0, 0.01, 2.0])
-
-
-def test_tensor_tensor_max():
-    t1 = Tensor([-1.0, 0.0, 2.01, 2.0])
-    t2 = Tensor([2.0, 1.0, 0.01, 3.0])
-
-    t = t1.maximum(t2)
-
-    assert_close(t.to_cpu(), [2.0, 1.0, 2.01, 3.0])
-
-
-def test_tensor_large_data():
-    size = 10_000
-    data = [float(i) for i in range(size)]
-
-    t1 = Tensor(data)
-    t2 = Tensor(data)
-
-    t3 = t1 + t2
-
-    res = t3.to_cpu()
-    assert len(res) == size
-    assert res[0] == 0.0
-    assert res[-1] == (size - 1) * 2
-
-
-def test_shape_mismatch():
-    t1 = Tensor([1.0, 2.0])
-    t2 = Tensor([1.0, 2.0, 3.0])
-
-    with pytest.raises((ValueError, RuntimeError)):
-        _ = t1 + t2
-
-
-def test_memory_cleanup():
-    t = Tensor([1.0, 2.0, 3.0])
-    del t
-    assert True
+        for method, py_op, _ in self.BINARY_OPS:
+            with pytest.raises(ValueError, match="Shape mismatch"):
+                if method.startswith("__"):
+                    py_op(t_a, t_b)
+                else:
+                    py_op(t_a, t_b)
