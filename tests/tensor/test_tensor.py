@@ -22,11 +22,9 @@ class TestTensorExhaustive:
         ), f"Shape Mismatch: Tensor {tensor_res.shape} vs NP {np_res.shape}"
 
         tensor_data = tensor_res.to_np()
-
-        if np_res.dtype == bool:
-            np.testing.assert_array_equal(tensor_data.astype(bool), np_res)
-        else:
-            np.testing.assert_allclose(tensor_data, np_res, rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(
+            tensor_data, np_res.astype(np.float32), rtol=1e-5, atol=1e-5
+        )
 
     @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
     @pytest.mark.parametrize("shape", [(10,), (5, 5), (2, 3, 4)])
@@ -37,12 +35,9 @@ class TestTensorExhaustive:
         t_a = Tensor.from_np(np_a)
         t_b = Tensor.from_np(np_b)
 
-        if method_name.startswith("__"):
-            t_res = py_op(t_a, t_b)
-        else:
-            t_res = py_op(t_a, t_b)
-
+        t_res = py_op(t_a, t_b)
         np_res = np_op(np_a, np_b)
+
         self._assert_tensor_eq_np(t_res, np_res)
 
     @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
