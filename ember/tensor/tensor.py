@@ -112,7 +112,7 @@ class Tensor:
     def minimum(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "min()", _min_tensor, _min_scalar)
 
-    def to_np(self):
+    def to_np(self) -> NDArray:
         result = self._core._to_np()
         return result.reshape(self.shape)
 

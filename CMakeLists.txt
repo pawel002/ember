@@ -5,6 +5,7 @@ if(NOT APPLE)
   message(STATUS "Architecture supports CUDA, ember will use it as backend")
   enable_language(CUDA)
   set(CMAKE_CUDA_ARCHITECTURES "native")
+  find_package(CUDAToolkit REQUIRED)
 endif()
 
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
@@ -49,6 +50,7 @@ target_include_directories(ember_native PRIVATE ${NUMPY_INCLUDE_DIR})
 
 if(NOT APPLE)
   set_target_properties(ember_native PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+  target_link_libraries(ember_native PRIVATE CUDA::cublas)
 endif()
 
 # ----------------------------------------------------
@@ -87,6 +89,7 @@ function(add_ember_extension target_name output_basename module_dir entry_file)
     set_target_properties(
       ${target_name} PROPERTIES CUDA_SEPARABLE_COMPILATION ON
                                 CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+    target_link_libraries(${target_name} PRIVATE CUDA::cublas)
   endif()
 endfunction()
 

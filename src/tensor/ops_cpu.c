@@ -65,9 +65,9 @@ void gt_scalar(const float *a, const float b, float *out, int size)
 }
 
 // misc operators
-void negate(const float *a, float *b, int size)
+void negate(const float *a, float *out, int size)
 {
-    for (int i = 0; i < size; i++) b[i] = a[i] * -1.0f;
+    for (int i = 0; i < size; i++) out[i] = a[i] * -1.0f;
 }
 
 void simple_matmul(const float *a, const float *b, float *out, int n, int m, int k)

@@ -99,6 +99,7 @@ static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
         return PyErr_NoMemory();
     }
 
+    sync_device();  // make sure the device is synchronized
     copy_from_device(temp_host, self->d_ptr, self->size * sizeof(float));
 
     int offset = 0;
@@ -124,6 +125,8 @@ static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
     }
 
     void *dst = PyArray_DATA((PyArrayObject *)arr);
+
+    sync_device();  // make sure the device is synchronized
     copy_from_device(dst, self->d_ptr, (size_t)self->size * sizeof(float));
 
     return arr;

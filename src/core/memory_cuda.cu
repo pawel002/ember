@@ -3,20 +3,11 @@
 #include <stdlib.h>
 
 #include "memory.h"
-
-#define CHECK_CUDA(call)                                                                    \
-    {                                                                                       \
-        cudaError_t err = call;                                                             \
-        if (err != cudaSuccess) {                                                           \
-            fprintf(stderr, "CUDA Error: %s at %s:%d\n", cudaGetErrorString(err), __FILE__, \
-                    __LINE__);                                                              \
-            exit(EXIT_FAILURE);                                                             \
-        }                                                                                   \
-    }
+#include "utils_cuda.cuh"
 
 extern "C" {
 
-void *alloc_gpu(size_t bytes)
+void *alloc_memory(size_t bytes)
 {
     void *ptr = NULL;
     cudaError_t err = cudaMalloc(&ptr, bytes);
@@ -29,20 +20,25 @@ void *alloc_gpu(size_t bytes)
     return ptr;
 }
 
-void free_gpu(void *ptr)
+void free_memory(void *ptr)
 {
     if (ptr != NULL) {
-        CHECK_CUDA(cudaFree(ptr));
+        GPU_ERR_CHK(cudaFree(ptr));
     }
 }
 
 void copy_to_device(void *dst_device, const void *src_host, size_t bytes)
 {
-    CHECK_CUDA(cudaMemcpy(dst_device, src_host, bytes, cudaMemcpyHostToDevice));
+    GPU_ERR_CHK(cudaMemcpy(dst_device, src_host, bytes, cudaMemcpyHostToDevice));
 }
 
 void copy_from_device(void *dst_host, const void *src_device, size_t bytes)
 {
-    CHECK_CUDA(cudaMemcpy(dst_host, src_device, bytes, cudaMemcpyDeviceToHost));
+    GPU_ERR_CHK(cudaMemcpy(dst_host, src_device, bytes, cudaMemcpyDeviceToHost));
+}
+
+void sync_device()
+{
+    GPU_ERR_CHK(cudaDeviceSynchronize());
 }
 }
