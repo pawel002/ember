@@ -9,12 +9,17 @@ from ember import Tensor
 
 class TestTensorExhaustive:
     BINARY_OPS = [
-        ("__add__", operator.add, np.add),
-        ("__sub__", operator.sub, np.subtract),
-        ("__mul__", operator.mul, np.multiply),
-        ("__gt__", operator.gt, np.greater),
-        ("maximum", em.max, np.maximum),
-        ("minimum", em.min, np.minimum),
+        ("add", operator.add, np.add),
+        ("sub", operator.sub, np.subtract),
+        ("mul", operator.mul, np.multiply),
+        ("gt", operator.gt, np.greater),
+        ("max", em.max, np.maximum),
+        ("min", em.min, np.minimum),
+    ]
+    REVERSABLE_OPS = [
+        ("radd", operator.add, np.add),
+        ("rsub", operator.sub, np.subtract),
+        ("rmul", operator.mul, np.multiply),
     ]
 
     def _assert_tensor_eq_np(self, tensor_res, np_res):
@@ -50,6 +55,20 @@ class TestTensorExhaustive:
 
         t_res = py_op(t_a, scalar)
         np_res = np_op(np_a, scalar)
+
+        self._assert_tensor_eq_np(t_res, np_res)
+
+    @pytest.mark.parametrize("method_name, py_op, np_op", REVERSABLE_OPS)
+    @pytest.mark.parametrize("scalar", [0.0, 1.0, -5.5, 100])
+    def test_reverse_binary_op_scalar_vs_tensor(
+        self, method_name, py_op, np_op, scalar
+    ):
+        shape = (3, 3)
+        np_a = np.random.randn(*shape).astype(np.float32)
+        t_a = Tensor.from_np(np_a)
+
+        t_res = py_op(scalar, t_a)
+        np_res = np_op(scalar, np_a)
 
         self._assert_tensor_eq_np(t_res, np_res)
 
@@ -115,6 +134,15 @@ class TestTensorExhaustive:
         else:
             with pytest.raises(ValueError):
                 t_a.reshape(target_shape)
+
+    def test_reshape_is_inplace_and_returns_self(self):
+        t = Tensor.from_np(np.zeros((2, 3)))
+        original_id = id(t)
+
+        t_returned = t.reshape((6,))
+
+        assert id(t_returned) == original_id, "Reshape should return self"
+        assert t.shape == (6,), "Reshape should modify shape in-place"
 
     def test_shape_mismatch_raises_error(self):
         t_a = Tensor.from_np(np.zeros((2, 2)))

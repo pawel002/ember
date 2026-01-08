@@ -16,6 +16,7 @@ void gt_tensor(const float *a, const float *b, float *out, int size);
 // scalar oprator
 void add_scalar(const float *a, const float b, float *out, int size);
 void sub_scalar(const float *a, const float b, float *out, int size);
+void rsub_scalar(const float *a, const float b, float *out, int size);
 void mul_scalar(const float *a, const float b, float *out, int size);
 void max_scalar(const float *a, const float b, float *out, int size);
 void min_scalar(const float *a, const float b, float *out, int size);

@@ -44,6 +44,11 @@ void sub_scalar(const float *a, const float b, float *out, int size)
     for (int i = 0; i < size; i++) out[i] = a[i] - b;
 }
 
+void rsub_scalar(const float *a, const float b, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = b - a[i];
+}
+
 void mul_scalar(const float *a, const float b, float *out, int size)
 {
     for (int i = 0; i < size; i++) out[i] = a[i] * b;

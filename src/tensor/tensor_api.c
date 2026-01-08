@@ -236,69 +236,74 @@ static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_f
 }
 
 // Tensor operators
-static PyObject *_tensor_add(PyObject *module, PyObject *args)
+static PyObject *_add_tensor(PyObject *module, PyObject *args)
 {
     return impl_tensor_binary_op(module, args, add_tensor);
 }
 
-static PyObject *_tensor_sub(PyObject *module, PyObject *args)
+static PyObject *_sub_tensor(PyObject *module, PyObject *args)
 {
     return impl_tensor_binary_op(module, args, sub_tensor);
 }
 
-static PyObject *_tensor_mul(PyObject *module, PyObject *args)
+static PyObject *_mul_tensor(PyObject *module, PyObject *args)
 {
     return impl_tensor_binary_op(module, args, mul_tensor);
 }
 
-static PyObject *_tensor_max(PyObject *module, PyObject *args)
+static PyObject *_max_tensor(PyObject *module, PyObject *args)
 {
     return impl_tensor_binary_op(module, args, max_tensor);
 }
 
-static PyObject *_tensor_min(PyObject *module, PyObject *args)
+static PyObject *_min_tensor(PyObject *module, PyObject *args)
 {
     return impl_tensor_binary_op(module, args, min_tensor);
 }
 
-static PyObject *_tensor_gt(PyObject *module, PyObject *args)
+static PyObject *_gt_tensor(PyObject *module, PyObject *args)
 {
     return impl_tensor_binary_op(module, args, gt_tensor);
 }
 
 // Scalar operators
-static PyObject *_scalar_add(PyObject *module, PyObject *args)
+static PyObject *_add_scalar(PyObject *module, PyObject *args)
 {
     return impl_float_binary_op(module, args, add_scalar);
 }
 
-static PyObject *_scalar_sub(PyObject *module, PyObject *args)
+static PyObject *_sub_scalar(PyObject *module, PyObject *args)
 {
     return impl_float_binary_op(module, args, sub_scalar);
 }
 
-static PyObject *_scalar_mul(PyObject *module, PyObject *args)
+static PyObject *_rsub_scalar(PyObject *module, PyObject *args)
+{
+    return impl_float_binary_op(module, args, rsub_scalar);
+}
+
+static PyObject *_mul_scalar(PyObject *module, PyObject *args)
 {
     return impl_float_binary_op(module, args, mul_scalar);
 }
 
-static PyObject *_scalar_max(PyObject *module, PyObject *args)
+static PyObject *_max_scalar(PyObject *module, PyObject *args)
 {
     return impl_float_binary_op(module, args, max_scalar);
 }
 
-static PyObject *_scalar_min(PyObject *module, PyObject *args)
+static PyObject *_min_scalar(PyObject *module, PyObject *args)
 {
     return impl_float_binary_op(module, args, min_scalar);
 }
 
-static PyObject *_scalar_gt(PyObject *module, PyObject *args)
+static PyObject *_gt_scalar(PyObject *module, PyObject *args)
 {
     return impl_float_binary_op(module, args, gt_scalar);
 }
 
 // Misc operators
-static PyObject *_tensor_simple_matmul(PyObject *module, PyObject *args)
+static PyObject *_simple_matmul(PyObject *module, PyObject *args)
 {
     _Tensor *a, *b;
     int n, m, k;
@@ -332,7 +337,7 @@ static PyObject *_tensor_simple_matmul(PyObject *module, PyObject *args)
     return (PyObject *)result;
 }
 
-static PyObject *_tensor_negate(PyObject *module, PyObject *args)
+static PyObject *_negate(PyObject *module, PyObject *args)
 {
     _Tensor *a;
     if (!PyArg_ParseTuple(args, "O!", &_TensorType, &a)) return NULL;
@@ -366,20 +371,21 @@ static PyMemberDef _Tensor_members[] = {
 
 // Methods attached to the MODULE (Standalone functions)
 static PyMethodDef module_methods[] = {
-    {"_add_tensor", (PyCFunction)_tensor_add, METH_VARARGS, "T + T"},
-    {"_sub_tensor", (PyCFunction)_tensor_sub, METH_VARARGS, "T - T"},
-    {"_mul_tensor", (PyCFunction)_tensor_mul, METH_VARARGS, "T * T"},
-    {"_max_tensor", (PyCFunction)_tensor_max, METH_VARARGS, "max(T, T)"},
-    {"_min_tensor", (PyCFunction)_tensor_min, METH_VARARGS, "min(T, T)"},
-    {"_gt_tensor", (PyCFunction)_tensor_gt, METH_VARARGS, "T > T"},
-    {"_add_scalar", (PyCFunction)_scalar_add, METH_VARARGS, "T + float"},
-    {"_sub_scalar", (PyCFunction)_scalar_sub, METH_VARARGS, "T - float"},
-    {"_mul_scalar", (PyCFunction)_scalar_mul, METH_VARARGS, "T * float"},
-    {"_max_scalar", (PyCFunction)_scalar_max, METH_VARARGS, "max(T, float)"},
-    {"_min_scalar", (PyCFunction)_scalar_min, METH_VARARGS, "min(T, float)"},
-    {"_gt_scalar", (PyCFunction)_scalar_gt, METH_VARARGS, "T > float"},
-    {"_negate", (PyCFunction)_tensor_negate, METH_VARARGS, "-T"},
-    {"_matmul", (PyCFunction)_tensor_simple_matmul, METH_VARARGS, "T @ T"},
+    {"_add_tensor", (PyCFunction)_add_tensor, METH_VARARGS, "T + T"},
+    {"_sub_tensor", (PyCFunction)_sub_tensor, METH_VARARGS, "T - T"},
+    {"_mul_tensor", (PyCFunction)_mul_tensor, METH_VARARGS, "T * T"},
+    {"_max_tensor", (PyCFunction)_max_tensor, METH_VARARGS, "max(T, T)"},
+    {"_min_tensor", (PyCFunction)_min_tensor, METH_VARARGS, "min(T, T)"},
+    {"_gt_tensor", (PyCFunction)_gt_tensor, METH_VARARGS, "T > T"},
+    {"_add_scalar", (PyCFunction)_add_scalar, METH_VARARGS, "T + float"},
+    {"_sub_scalar", (PyCFunction)_sub_scalar, METH_VARARGS, "T - float"},
+    {"_rsub_scalar", (PyCFunction)_rsub_scalar, METH_VARARGS, "float - T"},
+    {"_mul_scalar", (PyCFunction)_mul_scalar, METH_VARARGS, "T * float"},
+    {"_max_scalar", (PyCFunction)_max_scalar, METH_VARARGS, "max(T, float)"},
+    {"_min_scalar", (PyCFunction)_min_scalar, METH_VARARGS, "min(T, float)"},
+    {"_gt_scalar", (PyCFunction)_gt_scalar, METH_VARARGS, "T > float"},
+    {"_negate", (PyCFunction)_negate, METH_VARARGS, "-T"},
+    {"_matmul", (PyCFunction)_simple_matmul, METH_VARARGS, "T @ T"},
     {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS, "T from np"},
     {NULL}};
 

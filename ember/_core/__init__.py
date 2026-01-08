@@ -8,6 +8,7 @@ from ._tensor import (
     _gt_tensor,
     _add_scalar,
     _sub_scalar,
+    _rsub_scalar,
     _mul_scalar,
     _max_scalar,
     _min_scalar,
@@ -16,6 +17,7 @@ from ._tensor import (
     _negate,
     _from_numpy,
 )
+from ._types import TensorBinaryOp, TensorScalarOp, TensorUnaryOp
 
 __all__ = [
     "_Tensor",
@@ -27,6 +29,7 @@ __all__ = [
     "_gt_tensor",
     "_add_scalar",
     "_sub_scalar",
+    "_rsub_scalar",
     "_mul_scalar",
     "_max_scalar",
     "_min_scalar",
@@ -34,4 +37,8 @@ __all__ = [
     "_matmul",
     "_negate",
     "_from_numpy",
+    # types
+    "TensorBinaryOp",
+    "TensorScalarOp",
+    "TensorUnaryOp",
 ]

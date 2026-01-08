@@ -1,9 +1,10 @@
 from __future__ import annotations
-from typing import List, Literal, Any, Dict, Tuple, Callable, Union
+from typing import List, Literal, Any, Dict, Tuple, Union
 
 import math
 
 from ember._core import (
+    # tensor and its operators
     _Tensor,
     _add_tensor,
     _sub_tensor,
@@ -13,6 +14,7 @@ from ember._core import (
     _gt_tensor,
     _add_scalar,
     _sub_scalar,
+    _rsub_scalar,
     _mul_scalar,
     _max_scalar,
     _min_scalar,
@@ -20,6 +22,10 @@ from ember._core import (
     _matmul,
     _negate,
     _from_numpy,
+    # types
+    TensorBinaryOp,
+    TensorUnaryOp,
+    TensorScalarOp,
 )
 from .tensor_utils import extract_data_info
 
@@ -27,8 +33,6 @@ from numpy.typing import NDArray
 import numpy as np
 
 Types = Literal["int32", "float32"]
-TensorBinaryOp = Callable[[_Tensor, _Tensor], _Tensor]
-FloatBinaryOp = Callable[[_Tensor, float], _Tensor]
 BinaryOpType = Union["Tensor", float, int]
 _Types_lookup: Dict[type, Types] = {int: "int32", float: "float32"}
 
@@ -69,11 +73,20 @@ class Tensor:
     def __add__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "+", _add_tensor, _add_scalar)
 
+    def __radd__(self, other: BinaryOpType) -> Tensor:
+        return self + other
+
     def __sub__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "-", _sub_tensor, _sub_scalar)
 
+    def __rsub__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "-", _sub_tensor, _rsub_scalar)
+
     def __mul__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "*", _mul_tensor, _mul_scalar)
+
+    def __rmul__(self, other: BinaryOpType) -> Tensor:
+        return self.__mul__(other)
 
     def __gt__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, ">", _gt_tensor, _gt_scalar)
@@ -144,7 +157,7 @@ def _binary_op_wrapper(
     b: BinaryOpType,
     op_symbol: str,
     tensor_op: TensorBinaryOp,
-    float_op: FloatBinaryOp,
+    float_op: TensorScalarOp,
 ) -> Tensor:
     result_core = None
     if isinstance(b, Tensor):
@@ -160,6 +173,19 @@ def _binary_op_wrapper(
     if result_core is None:
         raise TypeError(
             f"Unsupported operand type(s) for {op_symbol}: Tensor and '{type(b).__name__}'"
+        )
+
+    return Tensor._from_core(result_core, a.shape, a.dtype)
+
+
+def _unary_op_wrapper(a: Tensor, op_symbol: str, tensor_op: TensorUnaryOp) -> Tensor:
+    result_core = None
+    if isinstance(a, Tensor):
+        result_core = tensor_op(a._core)
+
+    if result_core is None:
+        raise TypeError(
+            f"Ember operator {op_symbol} doesn't support '{type(a).__name__}', only Tensors"
         )
 
     return Tensor._from_core(result_core, a.shape, a.dtype)
