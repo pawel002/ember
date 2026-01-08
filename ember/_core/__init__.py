@@ -15,6 +15,7 @@ from ._tensor import (
     _gt_scalar,
     _matmul,
     _negate,
+    _exponent,
     _from_numpy,
 )
 from ._types import TensorBinaryOp, TensorScalarOp, TensorUnaryOp
@@ -36,6 +37,7 @@ __all__ = [
     "_gt_scalar",
     "_matmul",
     "_negate",
+    "_exponent",
     "_from_numpy",
     # types
     "TensorBinaryOp",

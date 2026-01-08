@@ -7,7 +7,8 @@
 #include "tensor_helpers.h"
 
 typedef void (*binary_tensor_op_func)(const float *, const float *, float *, int);
-typedef void (*binary_float_op_func)(const float *, const float, float *, int);
+typedef void (*binary_scalar_op_func)(const float *, const float, float *, int);
+typedef void (*unary_tensor_op_func)(const float *, float *, int);
 
 static PyTypeObject _TensorType;
 
@@ -16,8 +17,7 @@ typedef struct {
     int size;
 } _Tensor;
 
-// --- Internal Object Methods (Dealloc/Init/IO) ---
-
+// dealloc, inits, copy
 static void _Tensor_dealloc(_Tensor *self)
 {
     if (self->d_ptr) free_memory(self->d_ptr);
@@ -132,8 +132,6 @@ static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
     return arr;
 }
 
-// --- Fancy innits (ie. from numpy)
-
 static PyObject *_tensor_from_numpy(PyObject *module, PyObject *args)
 {
     PyObject *obj;
@@ -180,8 +178,7 @@ static PyObject *_tensor_from_numpy(PyObject *module, PyObject *args)
     return (PyObject *)result;
 }
 
-// --- Standalone Module Functions ---
-
+// operator wrappers
 static PyObject *impl_tensor_binary_op(PyObject *module, PyObject *args, binary_tensor_op_func op)
 {
     _Tensor *a, *b;
@@ -210,7 +207,7 @@ static PyObject *impl_tensor_binary_op(PyObject *module, PyObject *args, binary_
     return (PyObject *)result;
 }
 
-static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_float_op_func op)
+static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_scalar_op_func op)
 {
     _Tensor *a;
     float b;
@@ -235,7 +232,28 @@ static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_f
     return (PyObject *)result;
 }
 
-// Tensor operators
+// unary operators
+static PyObject *_impl_tensor_unary_op(PyObject *module, PyObject *args, unary_tensor_op_func op)
+{
+    _Tensor *a;
+    if (!PyArg_ParseTuple(args, "O!", &_TensorType, &a)) return NULL;
+
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) return NULL;
+
+    result->size = a->size;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+
+    op(a->d_ptr, result->d_ptr, a->size);
+    return (PyObject *)result;
+}
+
+// binary tensor operators
 static PyObject *_add_tensor(PyObject *module, PyObject *args)
 {
     return impl_tensor_binary_op(module, args, add_tensor);
@@ -266,7 +284,7 @@ static PyObject *_gt_tensor(PyObject *module, PyObject *args)
     return impl_tensor_binary_op(module, args, gt_tensor);
 }
 
-// Scalar operators
+// binary scalar operators
 static PyObject *_add_scalar(PyObject *module, PyObject *args)
 {
     return impl_float_binary_op(module, args, add_scalar);
@@ -302,7 +320,18 @@ static PyObject *_gt_scalar(PyObject *module, PyObject *args)
     return impl_float_binary_op(module, args, gt_scalar);
 }
 
-// Misc operators
+// unary tensor ops
+static PyObject *_negate(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, negate);
+}
+
+static PyObject *_exponent(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, exponent);
+}
+
+// misc operators
 static PyObject *_simple_matmul(PyObject *module, PyObject *args)
 {
     _Tensor *a, *b;
@@ -337,27 +366,6 @@ static PyObject *_simple_matmul(PyObject *module, PyObject *args)
     return (PyObject *)result;
 }
 
-static PyObject *_negate(PyObject *module, PyObject *args)
-{
-    _Tensor *a;
-    if (!PyArg_ParseTuple(args, "O!", &_TensorType, &a)) return NULL;
-
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
-    if (!result) return NULL;
-
-    result->size = a->size;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        return PyErr_NoMemory();
-    }
-
-    negate(a->d_ptr, result->d_ptr, a->size);
-
-    return (PyObject *)result;
-}
-
 // --- Method Tables ---
 // Methods attached to the _Tensor OBJECT (Instance methods)
 static PyMethodDef _Tensor_instance_methods[] = {
@@ -385,6 +393,7 @@ static PyMethodDef module_methods[] = {
     {"_min_scalar", (PyCFunction)_min_scalar, METH_VARARGS, "min(T, float)"},
     {"_gt_scalar", (PyCFunction)_gt_scalar, METH_VARARGS, "T > float"},
     {"_negate", (PyCFunction)_negate, METH_VARARGS, "-T"},
+    {"_exponent", (PyCFunction)_exponent, METH_VARARGS, "exp(T)"},
     {"_matmul", (PyCFunction)_simple_matmul, METH_VARARGS, "T @ T"},
     {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS, "T from np"},
     {NULL}};

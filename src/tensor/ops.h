@@ -22,9 +22,12 @@ void max_scalar(const float *a, const float b, float *out, int size);
 void min_scalar(const float *a, const float b, float *out, int size);
 void gt_scalar(const float *a, const float b, float *out, int size);
 
+// unary operators
+void negate(const float *a, float *out, int size);
+void exponent(const float *a, float *out, int size);
+
 // misc operators
 void simple_matmul(const float *a, const float *b, float *out, int n, int m, int k);
-void negate(const float *a, float *out, int size);
 
 #ifdef __cplusplus
 }

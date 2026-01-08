@@ -69,12 +69,19 @@ void gt_scalar(const float *a, const float b, float *out, int size)
     for (int i = 0; i < size; i++) out[i] = (a[i] > b) ? 1.0f : 0.0f;
 }
 
-// misc operators
+// unary operators
 void negate(const float *a, float *out, int size)
 {
     for (int i = 0; i < size; i++) out[i] = a[i] * -1.0f;
 }
 
+// unary operators
+void exponent(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = expf(a[i]);
+}
+
+// misc operators
 void simple_matmul(const float *a, const float *b, float *out, int n, int m, int k)
 {
     for (int i = 0; i < n; i++) {

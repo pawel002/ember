@@ -21,6 +21,7 @@ from ember._core import (
     _gt_scalar,
     _matmul,
     _negate,
+    _exponent,
     _from_numpy,
     # types
     TensorBinaryOp,
@@ -191,9 +192,15 @@ def _unary_op_wrapper(a: Tensor, op_symbol: str, tensor_op: TensorUnaryOp) -> Te
     return Tensor._from_core(result_core, a.shape, a.dtype)
 
 
+# standalone binary methods
 def max(a: Tensor, b: BinaryOpType) -> Tensor:
     return _binary_op_wrapper(a, b, "max()", _max_tensor, _max_scalar)
 
 
 def min(a: Tensor, b: BinaryOpType) -> Tensor:
     return _binary_op_wrapper(a, b, "min()", _min_tensor, _min_scalar)
+
+
+# standalone unary methods
+def exp(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "exp()", _exponent)

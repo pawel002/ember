@@ -16,6 +16,10 @@ class TestTensorExhaustive:
         ("max", em.max, np.maximum),
         ("min", em.min, np.minimum),
     ]
+    UNARY_OPS = [
+        ("neg", operator.neg, np.negative),
+        ("exp", em.exp, np.exp),
+    ]
     REVERSABLE_OPS = [
         ("radd", operator.add, np.add),
         ("rsub", operator.sub, np.subtract),
@@ -100,12 +104,14 @@ class TestTensorExhaustive:
             np_res = np_a @ np_b
             self._assert_tensor_eq_np(t_res, np_res)
 
-    def test_negate(self):
-        np_a = np.random.randn(5, 5).astype(np.float32)
+    @pytest.mark.parametrize("method_name, py_op, np_op", UNARY_OPS)
+    @pytest.mark.parametrize("shape", [(10,), (5, 5), (2, 3, 4)])
+    def test_unary_op(self, method_name, py_op, np_op, shape):
+        np_a = np.random.randn(*shape).astype(np.float32)
         t_a = Tensor.from_np(np_a)
 
-        t_res = -t_a
-        np_res = -np_a
+        t_res = py_op(t_a)
+        np_res = np_op(np_a)
 
         self._assert_tensor_eq_np(t_res, np_res)
 
