@@ -3,6 +3,7 @@ import numpy as np
 import operator
 from contextlib import nullcontext as does_not_raise
 
+import ember as em
 from ember import Tensor
 
 
@@ -12,8 +13,8 @@ class TestTensorExhaustive:
         ("__sub__", operator.sub, np.subtract),
         ("__mul__", operator.mul, np.multiply),
         ("__gt__", operator.gt, np.greater),
-        ("maximum", lambda a, b: a.maximum(b), np.maximum),
-        ("minimum", lambda a, b: a.minimum(b), np.minimum),
+        ("maximum", em.max, np.maximum),
+        ("minimum", em.min, np.minimum),
     ]
 
     def _assert_tensor_eq_np(self, tensor_res, np_res):

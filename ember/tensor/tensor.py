@@ -106,12 +106,6 @@ class Tensor:
     def __neg__(self):
         return Tensor._from_core(_negate(self._core), self.shape, self.dtype)
 
-    def maximum(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "max()", _max_tensor, _max_scalar)
-
-    def minimum(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "min()", _min_tensor, _min_scalar)
-
     def to_np(self) -> NDArray:
         result = self._core._to_np()
         return result.reshape(self.shape)
@@ -169,3 +163,11 @@ def _binary_op_wrapper(
         )
 
     return Tensor._from_core(result_core, a.shape, a.dtype)
+
+
+def max(a: Tensor, b: BinaryOpType) -> Tensor:
+    return _binary_op_wrapper(a, b, "max()", _max_tensor, _max_scalar)
+
+
+def min(a: Tensor, b: BinaryOpType) -> Tensor:
+    return _binary_op_wrapper(a, b, "min()", _min_tensor, _min_scalar)
