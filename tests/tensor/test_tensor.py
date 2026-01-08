@@ -12,6 +12,7 @@ class TestTensorExhaustive:
         ("add", operator.add, np.add),
         ("sub", operator.sub, np.subtract),
         ("mul", operator.mul, np.multiply),
+        ("div", operator.truediv, np.true_divide),
         ("gt", operator.gt, np.greater),
         ("max", em.max, np.maximum),
         ("min", em.min, np.minimum),
@@ -24,6 +25,7 @@ class TestTensorExhaustive:
         ("radd", operator.add, np.add),
         ("rsub", operator.sub, np.subtract),
         ("rmul", operator.mul, np.multiply),
+        ("rdiv", operator.truediv, np.true_divide),
     ]
 
     def _assert_tensor_eq_np(self, tensor_res, np_res):
@@ -53,6 +55,10 @@ class TestTensorExhaustive:
     @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
     @pytest.mark.parametrize("scalar", [0.0, 1.0, -5.5, 100])
     def test_binary_op_tensor_vs_scalar(self, method_name, py_op, np_op, scalar):
+        # division by zero proof
+        if method_name == "div" and abs(scalar) < 1e-5:
+            return
+
         shape = (3, 3)
         np_a = np.random.randn(*shape).astype(np.float32)
         t_a = Tensor.from_np(np_a)
@@ -67,6 +73,10 @@ class TestTensorExhaustive:
     def test_reverse_binary_op_scalar_vs_tensor(
         self, method_name, py_op, np_op, scalar
     ):
+        # division by zero proof
+        if method_name == "div" and abs(scalar) < 1e-5:
+            return
+
         shape = (3, 3)
         np_a = np.random.randn(*shape).astype(np.float32)
         t_a = Tensor.from_np(np_a)

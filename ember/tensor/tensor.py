@@ -9,6 +9,7 @@ from ember._core import (
     _add_tensor,
     _sub_tensor,
     _mul_tensor,
+    _truediv_tensor,
     _max_tensor,
     _min_tensor,
     _gt_tensor,
@@ -16,6 +17,8 @@ from ember._core import (
     _sub_scalar,
     _rsub_scalar,
     _mul_scalar,
+    _truediv_scalar,
+    _rtruediv_scalar,
     _max_scalar,
     _min_scalar,
     _gt_scalar,
@@ -88,6 +91,12 @@ class Tensor:
 
     def __rmul__(self, other: BinaryOpType) -> Tensor:
         return self.__mul__(other)
+
+    def __truediv__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "/", _truediv_tensor, _truediv_scalar)
+
+    def __rtruediv__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "/", _truediv_tensor, _rtruediv_scalar)
 
     def __gt__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, ">", _gt_tensor, _gt_scalar)

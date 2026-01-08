@@ -269,6 +269,11 @@ static PyObject *_mul_tensor(PyObject *module, PyObject *args)
     return impl_tensor_binary_op(module, args, mul_tensor);
 }
 
+static PyObject *_truediv_tensor(PyObject *module, PyObject *args)
+{
+    return impl_tensor_binary_op(module, args, truediv_tensor);
+}
+
 static PyObject *_max_tensor(PyObject *module, PyObject *args)
 {
     return impl_tensor_binary_op(module, args, max_tensor);
@@ -303,6 +308,16 @@ static PyObject *_rsub_scalar(PyObject *module, PyObject *args)
 static PyObject *_mul_scalar(PyObject *module, PyObject *args)
 {
     return impl_float_binary_op(module, args, mul_scalar);
+}
+
+static PyObject *_truediv_scalar(PyObject *module, PyObject *args)
+{
+    return impl_float_binary_op(module, args, truediv_scalar);
+}
+
+static PyObject *_rtruediv_scalar(PyObject *module, PyObject *args)
+{
+    return impl_float_binary_op(module, args, rtruediv_scalar);
 }
 
 static PyObject *_max_scalar(PyObject *module, PyObject *args)
@@ -382,6 +397,7 @@ static PyMethodDef module_methods[] = {
     {"_add_tensor", (PyCFunction)_add_tensor, METH_VARARGS, "T + T"},
     {"_sub_tensor", (PyCFunction)_sub_tensor, METH_VARARGS, "T - T"},
     {"_mul_tensor", (PyCFunction)_mul_tensor, METH_VARARGS, "T * T"},
+    {"_truediv_tensor", (PyCFunction)_truediv_tensor, METH_VARARGS, "T / T"},
     {"_max_tensor", (PyCFunction)_max_tensor, METH_VARARGS, "max(T, T)"},
     {"_min_tensor", (PyCFunction)_min_tensor, METH_VARARGS, "min(T, T)"},
     {"_gt_tensor", (PyCFunction)_gt_tensor, METH_VARARGS, "T > T"},
@@ -389,6 +405,8 @@ static PyMethodDef module_methods[] = {
     {"_sub_scalar", (PyCFunction)_sub_scalar, METH_VARARGS, "T - float"},
     {"_rsub_scalar", (PyCFunction)_rsub_scalar, METH_VARARGS, "float - T"},
     {"_mul_scalar", (PyCFunction)_mul_scalar, METH_VARARGS, "T * float"},
+    {"_truediv_scalar", (PyCFunction)_truediv_scalar, METH_VARARGS, "T / float"},
+    {"_rtruediv_scalar", (PyCFunction)_rtruediv_scalar, METH_VARARGS, "float / T"},
     {"_max_scalar", (PyCFunction)_max_scalar, METH_VARARGS, "max(T, float)"},
     {"_min_scalar", (PyCFunction)_min_scalar, METH_VARARGS, "min(T, float)"},
     {"_gt_scalar", (PyCFunction)_gt_scalar, METH_VARARGS, "T > float"},

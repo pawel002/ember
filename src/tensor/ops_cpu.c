@@ -18,6 +18,11 @@ void mul_tensor(const float *a, const float *b, float *out, int size)
     for (int i = 0; i < size; i++) out[i] = a[i] * b[i];
 }
 
+void truediv_tensor(const float *a, const float *b, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = a[i] / b[i];
+}
+
 void max_tensor(const float *a, const float *b, float *out, int size)
 {
     for (int i = 0; i < size; i++) out[i] = fmaxf(a[i], b[i]);
@@ -52,6 +57,17 @@ void rsub_scalar(const float *a, const float b, float *out, int size)
 void mul_scalar(const float *a, const float b, float *out, int size)
 {
     for (int i = 0; i < size; i++) out[i] = a[i] * b;
+}
+
+void truediv_scalar(const float *a, const float b, float *out, int size)
+{
+    float inv_b = 1.0f / b;
+    for (int i = 0; i < size; i++) out[i] = a[i] * inv_b;
+}
+
+void rtruediv_scalar(const float *a, const float b, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = b / a[i];
 }
 
 void max_scalar(const float *a, const float b, float *out, int size)

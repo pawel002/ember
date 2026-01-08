@@ -9,6 +9,7 @@ extern "C" {
 void add_tensor(const float *a, const float *b, float *out, int size);
 void sub_tensor(const float *a, const float *b, float *out, int size);
 void mul_tensor(const float *a, const float *b, float *out, int size);
+void truediv_tensor(const float *a, const float *b, float *out, int size);
 void max_tensor(const float *a, const float *b, float *out, int size);
 void min_tensor(const float *a, const float *b, float *out, int size);
 void gt_tensor(const float *a, const float *b, float *out, int size);
@@ -18,6 +19,8 @@ void add_scalar(const float *a, const float b, float *out, int size);
 void sub_scalar(const float *a, const float b, float *out, int size);
 void rsub_scalar(const float *a, const float b, float *out, int size);
 void mul_scalar(const float *a, const float b, float *out, int size);
+void truediv_scalar(const float *a, const float b, float *out, int size);
+void rtruediv_scalar(const float *a, const float b, float *out, int size);
 void max_scalar(const float *a, const float b, float *out, int size);
 void min_scalar(const float *a, const float b, float *out, int size);
 void gt_scalar(const float *a, const float b, float *out, int size);
