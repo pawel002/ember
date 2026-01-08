@@ -20,6 +20,14 @@ class TestTensorExhaustive:
     UNARY_OPS = [
         ("neg", operator.neg, np.negative),
         ("exp", em.exp, np.exp),
+        ("sin", em.sin, np.sin),
+        ("cos", em.cos, np.cos),
+        ("tan", em.tan, np.tan),
+        ("ctg", em.ctg, lambda x: 1.0 / np.tan(x)),
+        ("sinh", em.sinh, np.sinh),
+        ("cosh", em.cosh, np.cosh),
+        ("tanh", em.tanh, np.tanh),
+        ("ctgh", em.ctgh, lambda x: 1.0 / np.tanh(x)),
     ]
     REVERSABLE_OPS = [
         ("radd", operator.add, np.add),

@@ -346,6 +346,48 @@ static PyObject *_exponent(PyObject *module, PyObject *args)
     return _impl_tensor_unary_op(module, args, exponent);
 }
 
+// unary trigonometric tensor ops
+static PyObject *_sin(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, t_sin);
+}
+
+static PyObject *_cos(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, t_cos);
+}
+
+static PyObject *_tan(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, t_tan);
+}
+
+static PyObject *_ctg(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, t_ctg);
+}
+
+// unary trigonometric hyperbolic tensor ops
+static PyObject *_sinh(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, t_sinh);
+}
+
+static PyObject *_cosh(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, t_cosh);
+}
+
+static PyObject *_tanh(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, t_tanh);
+}
+
+static PyObject *_ctgh(PyObject *module, PyObject *args)
+{
+    return _impl_tensor_unary_op(module, args, t_ctgh);
+}
+
 // misc operators
 static PyObject *_simple_matmul(PyObject *module, PyObject *args)
 {
@@ -412,6 +454,14 @@ static PyMethodDef module_methods[] = {
     {"_gt_scalar", (PyCFunction)_gt_scalar, METH_VARARGS, "T > float"},
     {"_negate", (PyCFunction)_negate, METH_VARARGS, "-T"},
     {"_exponent", (PyCFunction)_exponent, METH_VARARGS, "exp(T)"},
+    {"_sin", (PyCFunction)_sin, METH_VARARGS, "sin(T)"},
+    {"_cos", (PyCFunction)_cos, METH_VARARGS, "cos(T)"},
+    {"_tan", (PyCFunction)_tan, METH_VARARGS, "tan(T)"},
+    {"_ctg", (PyCFunction)_ctg, METH_VARARGS, "ctg(T)"},
+    {"_sinh", (PyCFunction)_sinh, METH_VARARGS, "sinh(T)"},
+    {"_cosh", (PyCFunction)_cosh, METH_VARARGS, "cosh(T)"},
+    {"_tanh", (PyCFunction)_tanh, METH_VARARGS, "tanh(T)"},
+    {"_ctgh", (PyCFunction)_ctgh, METH_VARARGS, "ctgh(T)"},
     {"_matmul", (PyCFunction)_simple_matmul, METH_VARARGS, "T @ T"},
     {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS, "T from np"},
     {NULL}};

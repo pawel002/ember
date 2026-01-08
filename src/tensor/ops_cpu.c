@@ -91,10 +91,51 @@ void negate(const float *a, float *out, int size)
     for (int i = 0; i < size; i++) out[i] = a[i] * -1.0f;
 }
 
-// unary operators
 void exponent(const float *a, float *out, int size)
 {
     for (int i = 0; i < size; i++) out[i] = expf(a[i]);
+}
+
+// unary trigonometric
+void t_sin(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = sinf(a[i]);
+}
+
+void t_cos(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = cosf(a[i]);
+}
+
+void t_tan(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = tanf(a[i]);
+}
+
+void t_ctg(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = 1.0f / tanf(a[i]);
+}
+
+// unary trigonometric hyperbolic
+void t_sinh(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = sinhf(a[i]);
+}
+
+void t_cosh(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = coshf(a[i]);
+}
+
+void t_tanh(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = tanhf(a[i]);
+}
+
+void t_ctgh(const float *a, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = 1.0f / tanhf(a[i]);
 }
 
 // misc operators

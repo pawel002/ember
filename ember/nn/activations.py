@@ -28,3 +28,30 @@ class Sigmoid(Activation):
 
     def backward(self, grad_y: Tensor) -> Tensor:
         return grad_y * (self.y * (1.0 - self.y))
+
+
+class Tanh(Activation):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: Tensor, training: bool) -> Tensor:
+        self.x = x
+        self.y = em.tanh(x)
+        return self.y
+
+    def backward(self, grad_y: Tensor) -> Tensor:
+        return grad_y * (1 - self.y * self.y)
+
+
+class GELU(Activation):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: Tensor, training: bool) -> Tensor:
+        self.x = x
+        self.y = 0.5 * x * (1 + em.tanh(0.8 * x))
+        return self.y
+
+    def backward(self, grad_y: Tensor) -> Tensor:
+        a = 0.8
+        return grad_y * ((1.0 + em.tanh(a * self.x)) * (0.5 + a * (self.x - self.y)))

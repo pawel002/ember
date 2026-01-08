@@ -24,6 +24,14 @@ from ember._core import (
     _gt_scalar,
     _matmul,
     _negate,
+    _sin,
+    _cos,
+    _tan,
+    _ctg,
+    _sinh,
+    _cosh,
+    _tanh,
+    _ctgh,
     _exponent,
     _from_numpy,
     # types
@@ -213,3 +221,38 @@ def min(a: Tensor, b: BinaryOpType) -> Tensor:
 # standalone unary methods
 def exp(a: Tensor) -> Tensor:
     return _unary_op_wrapper(a, "exp()", _exponent)
+
+
+# trig
+def sin(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "sin()", _sin)
+
+
+def cos(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "cos()", _cos)
+
+
+def tan(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "tan()", _tan)
+
+
+def ctg(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "ctg()", _ctg)
+
+
+# hyper trig
+# trig
+def sinh(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "sinh()", _sinh)
+
+
+def cosh(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "cosh()", _cosh)
+
+
+def tanh(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "tanh()", _tanh)
+
+
+def ctgh(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "ctgh()", _ctgh)
