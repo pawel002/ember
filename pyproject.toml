@@ -5,16 +5,33 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "ember"
 version = "0.1.0"
+description = "A lightweight deep learning library with C/CUDA acceleration."
+readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Pawel Jarosz", email = "paweljarosz002@gmail.com" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "numpy>=2.3.5",
     "pre-commit>=4.5.1",
 ]
+urls.Repository = "https://github.com/pawel002/ember"
+urls.Issues = "https://github.com/pawel002/ember/issues"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "numpy"
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0"
 ]
 
 [tool.scikit-build]
