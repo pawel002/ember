@@ -44,7 +44,7 @@ print(c.to_np())   # Output: np.array([4.0, 10.0, 18.0])
 
 ## Documentation
 
-Full documentation is available in the `docs/` directory or can be built locally using MkDocs (by switching to docs dependency group):
+Full documentation is available under [this link](https://pawel002.github.io/ember/) or can be built locally using MkDocs (by switching to docs dependency group):
 
 ```bash
 uv sync --group docs
