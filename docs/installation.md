@@ -29,9 +29,3 @@ Ember requires Python 3.11 or later. You can install it from source.
    ```bash
    uv pip install -e .
    ```
-
-   Or using standard pip:
-
-   ```bash
-   pip install .
-   ```
