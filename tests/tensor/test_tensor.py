@@ -1,7 +1,8 @@
-import pytest
-import numpy as np
 import operator
 from contextlib import nullcontext as does_not_raise
+
+import numpy as np
+import pytest
 
 import ember as em
 from ember import Tensor
@@ -37,9 +38,9 @@ class TestTensorExhaustive:
     ]
 
     def _assert_tensor_eq_np(self, tensor_res, np_res):
-        assert (
-            tensor_res.shape == np_res.shape
-        ), f"Shape Mismatch: Tensor {tensor_res.shape} vs NP {np_res.shape}"
+        assert tensor_res.shape == np_res.shape, (
+            f"Shape Mismatch: Tensor {tensor_res.shape} vs NP {np_res.shape}"
+        )
 
         tensor_data = tensor_res.to_np()
         np.testing.assert_allclose(

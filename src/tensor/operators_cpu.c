@@ -1,6 +1,6 @@
 #include <math.h>
 
-#include "ops.h"
+#include "operators.h"
 
 // tensor operators
 void add_tensor(const float *a, const float *b, float *out, int size)

@@ -3,7 +3,8 @@
 #include <structmember.h>
 
 #include "../core/memory.h"
-#include "ops.h"
+#include "../core/tensor_types.h"
+#include "operators.h"
 #include "tensor_helpers.h"
 
 typedef void (*binary_tensor_op_func)(const float *, const float *, float *, int);
@@ -11,11 +12,6 @@ typedef void (*binary_scalar_op_func)(const float *, const float, float *, int);
 typedef void (*unary_tensor_op_func)(const float *, float *, int);
 
 static PyTypeObject _TensorType;
-
-typedef struct {
-    PyObject_HEAD void *d_ptr;
-    int size;
-} _Tensor;
 
 // dealloc, inits, copy
 static void _Tensor_dealloc(_Tensor *self)

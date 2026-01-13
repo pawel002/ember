@@ -1,57 +1,58 @@
 from __future__ import annotations
-from typing import List, Literal, Any, Dict, Tuple, Union
 
 import math
+from typing import Any, Literal, Union
+
+import numpy as np
+from numpy.typing import NDArray
 
 from ember._core import (
-    # tensor and its operators
-    _Tensor,
-    _add_tensor,
-    _sub_tensor,
-    _mul_tensor,
-    _truediv_tensor,
-    _max_tensor,
-    _min_tensor,
-    _gt_tensor,
+    # types
+    TensorBinaryOp,
+    TensorScalarOp,
+    TensorUnaryOp,
     _add_scalar,
-    _sub_scalar,
-    _rsub_scalar,
-    _mul_scalar,
-    _truediv_scalar,
-    _rtruediv_scalar,
-    _max_scalar,
-    _min_scalar,
-    _gt_scalar,
-    _matmul,
-    _negate,
-    _sin,
+    _add_tensor,
     _cos,
-    _tan,
-    _ctg,
-    _sinh,
     _cosh,
-    _tanh,
+    _ctg,
     _ctgh,
     _exponent,
     _from_numpy,
-    # types
-    TensorBinaryOp,
-    TensorUnaryOp,
-    TensorScalarOp,
+    _gt_scalar,
+    _gt_tensor,
+    _matmul,
+    _max_scalar,
+    _max_tensor,
+    _min_scalar,
+    _min_tensor,
+    _mul_scalar,
+    _mul_tensor,
+    _negate,
+    _rsub_scalar,
+    _rtruediv_scalar,
+    _sin,
+    _sinh,
+    _sub_scalar,
+    _sub_tensor,
+    _tan,
+    _tanh,
+    # tensor and its operators
+    _Tensor,
+    _truediv_scalar,
+    _truediv_tensor,
 )
-from .tensor_utils import extract_data_info
 
-from numpy.typing import NDArray
-import numpy as np
+from .tensor_utils import extract_data_info
 
 Types = Literal["int32", "float32"]
 BinaryOpType = Union["Tensor", float, int]
-_Types_lookup: Dict[type, Types] = {int: "int32", float: "float32"}
+_Types_lookup: dict[type, Types] = {int: "int32", float: "float32"}
 
 
 class Tensor:
     dtype: Types
-    shape: Tuple[int, ...]
+    shape: tuple[int, ...]
     _core: _Tensor
 
     def __init__(self, data: Any):
@@ -62,7 +63,7 @@ class Tensor:
         self._core._copy_from_list(flat_data)
 
     @classmethod
-    def _from_core(cls, core: _Tensor, shape: Tuple[int, ...], dtype: Types) -> Tensor:
+    def _from_core(cls, core: _Tensor, shape: tuple[int, ...], dtype: Types) -> Tensor:
         obj = cls.__new__(cls)
 
         obj._core = core
@@ -141,10 +142,10 @@ class Tensor:
         result = self._core._to_np()
         return result.reshape(self.shape)
 
-    def to_cpu(self) -> List[Any]:
+    def to_cpu(self) -> list[Any]:
         return self._core._to_list(self.shape)
 
-    def reshape(self, new_shape: Tuple[int, ...]) -> Tensor:
+    def reshape(self, new_shape: tuple[int, ...]) -> Tensor:
         total_elements = math.prod(self.shape)
 
         if -1 in new_shape:

@@ -1,0 +1,3 @@
+from ._tensor import _Tensor
+
+def _uniform(low: float, high: float, size: tuple[int, ...]) -> _Tensor: ...

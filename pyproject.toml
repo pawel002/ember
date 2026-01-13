@@ -38,3 +38,9 @@ docs = [
 wheel.packages = ["ember"]
 cmake.verbose = true
 logging.level = "INFO"
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["F", "I", "B", "UP"]

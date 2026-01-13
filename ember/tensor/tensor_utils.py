@@ -1,9 +1,9 @@
-from typing import Any, List, Tuple, Union
+from typing import Any
 
 
 def extract_data_info(
     data: Any,
-) -> Tuple[Tuple[int, ...], type, List[Union[int, float]]]:
+) -> tuple[tuple[int, ...], type, list[int | float]]:
     """
     Analyzes a nested list to extract shape, inferred type, and flattened data.
     Returns:
@@ -28,7 +28,7 @@ def extract_data_info(
         shape_agg.append(len(temp))
         temp = temp[0]
 
-    shape: Tuple = tuple(shape_agg)
+    shape: tuple = tuple(shape_agg)
 
     # 3. Recursive Traversal (Flatten + Validate + Type Check)
     flat_data = []

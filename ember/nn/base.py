@@ -1,13 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List
 from itertools import chain
 
 from ember import Tensor
 
 
 class Layer(ABC):
-    x: Optional[Tensor]
-    y: Optional[Tensor]
+    x: Tensor | None
+    y: Tensor | None
 
     def __call__(self, x: Tensor, training: bool = True) -> Tensor:
         self.x = x
@@ -20,11 +19,11 @@ class Layer(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def parameters(self) -> List[Tensor]:
+    def parameters(self) -> list[Tensor]:
         raise NotImplementedError
 
     @abstractmethod
-    def gradients(self) -> List[Tensor]:
+    def gradients(self) -> list[Tensor]:
         raise NotImplementedError
 
     @abstractmethod
@@ -41,10 +40,10 @@ class Activation(Layer):
         self.x = None
         self.y = None
 
-    def parameters(self) -> List[Tensor]:
+    def parameters(self) -> list[Tensor]:
         return []
 
-    def gradients(self) -> List[Tensor]:
+    def gradients(self) -> list[Tensor]:
         return []
 
 
@@ -69,8 +68,8 @@ class Sequential(Layer):
             grad_y = layer.backward(grad_y)
         return grad_y
 
-    def parameters(self) -> List[Tensor]:
+    def parameters(self) -> list[Tensor]:
         return list(chain.from_iterable(layer.parameters() for layer in self.layers))
 
-    def gradients(self) -> List[Tensor]:
+    def gradients(self) -> list[Tensor]:
         return list(chain.from_iterable(layer.gradients() for layer in self.layers))

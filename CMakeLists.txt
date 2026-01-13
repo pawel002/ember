@@ -41,8 +41,7 @@ macro(filter_backend_sources source_list)
   if(EMBER_USE_CUDA)
     list(FILTER ${source_list} EXCLUDE REGEX "_cpu\\.c$")
   else()
-    # Apply to Apple (Metal/CPU) AND Linux (CPU-only)
-    list(FILTER ${source_list} EXCLUDE REGEX "_cuda\\.cu$")
+    list(FILTER ${source_list} EXCLUDE REGEX "_gpu\\.cu$")
   endif()
 endmacro()
 
@@ -106,13 +105,15 @@ endfunction()
 
 add_ember_extension(_tensor "_tensor" "${CMAKE_SOURCE_DIR}/src/tensor"
                     "tensor_api.c")
+add_ember_extension(_em_random "_em_random" "${CMAKE_SOURCE_DIR}/src/random"
+                    "random_api.c")
+
 # add_ember_extension(_nn     "_nn"     "${CMAKE_SOURCE_DIR}/src/nn" "nn_api.c")
 # add_ember_extension(_optim  "_optim" "${CMAKE_SOURCE_DIR}/src/optim"
 # "optim_api.c")
 
 install(
-  TARGETS _tensor
-          # _nn _optim
+  TARGETS _tensor _em_random # _nn _optim
   LIBRARY DESTINATION ember/_core
   RUNTIME DESTINATION ember/_core)
 

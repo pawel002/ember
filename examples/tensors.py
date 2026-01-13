@@ -1,6 +1,6 @@
-from ember import Tensor
-
 import numpy as np
+
+from ember import Tensor
 
 a = np.random.uniform(0, 1, (10, 10))
 b = np.random.uniform(0, 1, (10, 10))

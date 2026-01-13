@@ -1,10 +1,9 @@
-from typing import Callable, TYPE_CHECKING
+from collections.abc import Callable
 
-if TYPE_CHECKING:
-    from ._tensor import _Tensor
+from ._tensor import _Tensor
 
-# _tensor types
+# tensor operator types
 Scalar = float
-TensorBinaryOp = Callable[["_Tensor", "_Tensor"], "_Tensor"]
-TensorUnaryOp = Callable[["_Tensor"], "_Tensor"]
-TensorScalarOp = Callable[["_Tensor", Scalar], "_Tensor"]
+TensorBinaryOp = Callable[[_Tensor, _Tensor], _Tensor]
+TensorUnaryOp = Callable[[_Tensor], _Tensor]
+TensorScalarOp = Callable[[_Tensor, Scalar], _Tensor]

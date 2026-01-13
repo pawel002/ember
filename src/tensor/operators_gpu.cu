@@ -2,8 +2,8 @@
 #include <cuda_runtime.h>
 #include <math.h>
 
-#include "../core/utils_cuda.cuh"
-#include "ops.h"
+#include "../core/utils_gpu.cuh"
+#include "operators.h"
 
 #define BLOCK_SIZE 256
 
