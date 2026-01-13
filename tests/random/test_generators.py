@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-import ember
+import ember as em
 from ember import Tensor
 
 
@@ -9,7 +9,7 @@ def test_uniform_generation():
     low = 0.0
     high = 1.0
     shape = (10, 10)
-    t = ember.random.uniform(low, high, shape)
+    t = em.random.uniform(low, high, shape)
 
     assert isinstance(t, Tensor)
     assert t.shape == shape
@@ -22,7 +22,7 @@ def test_uniform_generation():
 
 
 def test_large_tensor():
-    t = ember.random.uniform(5.0, -5.0, (100, 100))
+    t = em.random.uniform(5.0, -5.0, (100, 100))
     arr = t.to_np()
 
     assert arr.size == 10000
@@ -32,4 +32,4 @@ def test_large_tensor():
 
 def test_negative_dimensions():
     with pytest.raises(ValueError):
-        ember.random.uniform(1.0, 0.0, (10, -5))
+        em.random.uniform(1.0, 0.0, (10, -5))
