@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 void uniform(float low, float high, float *out, int size);
+void constant(float value, float *out, int size);
 
 #ifdef __cplusplus
 }

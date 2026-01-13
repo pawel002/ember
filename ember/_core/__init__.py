@@ -1,4 +1,4 @@
-from ._em_random import _uniform
+from ._em_random import _constant, _uniform
 from ._tensor import (
     _add_scalar,
     _add_tensor,
@@ -70,4 +70,5 @@ __all__ = [
     "_from_numpy",
     # distributions
     "_uniform",
+    "_constant",
 ]

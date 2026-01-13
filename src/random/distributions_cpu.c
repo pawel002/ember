@@ -8,3 +8,8 @@ void uniform(float low, float high, float *out, int size)
         out[i] = low + r * range;
     }
 }
+
+void constant(float value, float *out, int size)
+{
+    for (int i = 0; i < size; i++) out[i] = value;
+}
