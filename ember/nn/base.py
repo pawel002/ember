@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from itertools import chain
 
-from ember import Tensor
+from ember.tensor import Tensor
 
 
 class Layer(ABC):

@@ -3,7 +3,7 @@ import math
 from base import Layer
 
 import ember as em
-from ember import Tensor
+from ember.tensor import Tensor
 
 
 class Linear(Layer):

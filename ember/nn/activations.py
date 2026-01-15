@@ -1,7 +1,7 @@
-from base import Activation
-
 import ember as em
-from ember import Tensor
+from ember.tensor import Tensor
+
+from .base import Activation
 
 
 class ReLU(Activation):
@@ -14,7 +14,9 @@ class ReLU(Activation):
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
-        return grad_y * (self.y > 0)
+        assert self.y, "self.y needed for backward()"
+
+        return grad_y * (self.y > 0.0)
 
 
 class Sigmoid(Activation):
@@ -27,6 +29,8 @@ class Sigmoid(Activation):
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
+        assert self.y, "self.y needed for backward()"
+
         return grad_y * (self.y * (1.0 - self.y))
 
 
@@ -40,6 +44,8 @@ class Tanh(Activation):
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
+        assert self.y, "self.y needed for backward()"
+
         return grad_y * (1 - self.y * self.y)
 
 
@@ -53,5 +59,8 @@ class GELU(Activation):
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
+        assert self.y, "self.y needed for backward()"
+        assert self.x, "self.x needed for backward()"
+
         a = 0.8
         return grad_y * ((1.0 + em.tanh(a * self.x)) * (0.5 + a * (self.x - self.y)))
