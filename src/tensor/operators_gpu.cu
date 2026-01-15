@@ -182,7 +182,7 @@ void negate(const float *a, float *out, int size)
     k_negate<<<get_grid_size(size), BLOCK_SIZE>>>(a, out, size);
 }
 
-void simple_matmul(const float *a, const float *b, float *out, int n, int m, int k)
+void t_matmul(const float *a, const float *b, float *out, int n, int m, int k)
 {
     // TODO: move handle to global application context
     cublasHandle_t handle;

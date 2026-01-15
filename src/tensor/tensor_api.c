@@ -345,47 +345,47 @@ static PyObject *_exponent(PyObject *module, PyObject *args)
 // unary trigonometric tensor ops
 static PyObject *_sin(PyObject *module, PyObject *args)
 {
-    return _impl_tensor_unary_op(module, args, t_sin);
+    return _impl_tensor_unary_op(module, args, sin_tensor);
 }
 
 static PyObject *_cos(PyObject *module, PyObject *args)
 {
-    return _impl_tensor_unary_op(module, args, t_cos);
+    return _impl_tensor_unary_op(module, args, cos_tensor);
 }
 
 static PyObject *_tan(PyObject *module, PyObject *args)
 {
-    return _impl_tensor_unary_op(module, args, t_tan);
+    return _impl_tensor_unary_op(module, args, tan_tensor);
 }
 
 static PyObject *_ctg(PyObject *module, PyObject *args)
 {
-    return _impl_tensor_unary_op(module, args, t_ctg);
+    return _impl_tensor_unary_op(module, args, ctg_tensor);
 }
 
 // unary trigonometric hyperbolic tensor ops
 static PyObject *_sinh(PyObject *module, PyObject *args)
 {
-    return _impl_tensor_unary_op(module, args, t_sinh);
+    return _impl_tensor_unary_op(module, args, sinh_tensor);
 }
 
 static PyObject *_cosh(PyObject *module, PyObject *args)
 {
-    return _impl_tensor_unary_op(module, args, t_cosh);
+    return _impl_tensor_unary_op(module, args, cosh_tensor);
 }
 
 static PyObject *_tanh(PyObject *module, PyObject *args)
 {
-    return _impl_tensor_unary_op(module, args, t_tanh);
+    return _impl_tensor_unary_op(module, args, tanh_tensor);
 }
 
 static PyObject *_ctgh(PyObject *module, PyObject *args)
 {
-    return _impl_tensor_unary_op(module, args, t_ctgh);
+    return _impl_tensor_unary_op(module, args, ctgh_tensor);
 }
 
 // misc operators
-static PyObject *_simple_matmul(PyObject *module, PyObject *args)
+static PyObject *_matmul(PyObject *module, PyObject *args)
 {
     _Tensor *a, *b;
     int n, m, k;
@@ -414,8 +414,34 @@ static PyObject *_simple_matmul(PyObject *module, PyObject *args)
         return PyErr_NoMemory();
     }
 
-    simple_matmul(a->d_ptr, b->d_ptr, result->d_ptr, n, m, k);
+    matmul(a->d_ptr, b->d_ptr, result->d_ptr, n, m, k);
 
+    return (PyObject *)result;
+}
+
+static PyObject *_transpose(PyObject *module, PyObject *args)
+{
+    _Tensor *a;
+    int n, m;
+    if (!PyArg_ParseTuple(args, "O!ii", &_TensorType, &a, &n, &m)) return NULL;
+
+    if (a->size != n * m) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d", a->size, n, m);
+        return NULL;
+    }
+
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) return NULL;
+
+    result->size = a->size;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+
+    transpose(a->d_ptr, result->d_ptr, n, m);
     return (PyObject *)result;
 }
 
@@ -458,7 +484,8 @@ static PyMethodDef module_methods[] = {
     {"_cosh", (PyCFunction)_cosh, METH_VARARGS, "cosh(T)"},
     {"_tanh", (PyCFunction)_tanh, METH_VARARGS, "tanh(T)"},
     {"_ctgh", (PyCFunction)_ctgh, METH_VARARGS, "ctgh(T)"},
-    {"_matmul", (PyCFunction)_simple_matmul, METH_VARARGS, "T @ T"},
+    {"_matmul", (PyCFunction)_matmul, METH_VARARGS, "T @ T"},
+    {"_transpose", (PyCFunction)_transpose, METH_VARARGS, "transpose(T)"},
     {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS, "T from np"},
     {NULL}};
 

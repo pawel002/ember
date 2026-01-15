@@ -29,6 +29,7 @@ class TestTensorExhaustive:
         ("cosh", em.cosh, np.cosh),
         ("tanh", em.tanh, np.tanh),
         ("ctgh", em.ctgh, lambda x: 1.0 / np.tanh(x)),
+        ("T", em.T, np.transpose),
     ]
     REVERSABLE_OPS = [
         ("radd", operator.add, np.add),
@@ -36,10 +37,12 @@ class TestTensorExhaustive:
         ("rmul", operator.mul, np.multiply),
         ("rdiv", operator.truediv, np.true_divide),
     ]
+    SHAPES = [(10,), (5, 5), (2, 5), (2, 3, 4)]
+    SCALAR_VALUES = [0.0, 1.0, -5.5, 100]
 
     def _assert_tensor_eq_np(self, tensor_res, np_res):
         assert tensor_res.shape == np_res.shape, (
-            f"Shape Mismatch: Tensor {tensor_res.shape} vs NP {np_res.shape}"
+            f"Shape Mismatch: Tensor {tensor_res.shape} vs numpy {np_res.shape}"
         )
 
         tensor_data = tensor_res.to_np()
@@ -48,7 +51,7 @@ class TestTensorExhaustive:
         )
 
     @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
-    @pytest.mark.parametrize("shape", [(10,), (5, 5), (2, 3, 4)])
+    @pytest.mark.parametrize("shape", SHAPES)
     def test_binary_op_tensor_vs_tensor(self, method_name, py_op, np_op, shape):
         np_a = np.random.randn(*shape).astype(np.float32)
         np_b = np.random.randn(*shape).astype(np.float32)
@@ -62,10 +65,9 @@ class TestTensorExhaustive:
         self._assert_tensor_eq_np(t_res, np_res)
 
     @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
-    @pytest.mark.parametrize("scalar", [0.0, 1.0, -5.5, 100])
+    @pytest.mark.parametrize("scalar", SCALAR_VALUES)
     def test_binary_op_tensor_vs_scalar(self, method_name, py_op, np_op, scalar):
-        # division by zero proof
-        if method_name == "div" and abs(scalar) < 1e-5:
+        if self._verify_tensor_scalar_op_test_case(method_name, scalar):
             return
 
         shape = (3, 3)
@@ -78,12 +80,9 @@ class TestTensorExhaustive:
         self._assert_tensor_eq_np(t_res, np_res)
 
     @pytest.mark.parametrize("method_name, py_op, np_op", REVERSABLE_OPS)
-    @pytest.mark.parametrize("scalar", [0.0, 1.0, -5.5, 100])
-    def test_reverse_binary_op_scalar_vs_tensor(
-        self, method_name, py_op, np_op, scalar
-    ):
-        # division by zero proof
-        if method_name == "div" and abs(scalar) < 1e-5:
+    @pytest.mark.parametrize("scalar", SCALAR_VALUES)
+    def test_rev_binary_op_scalar_vs_tensor(self, method_name, py_op, np_op, scalar):
+        if self._verify_tensor_scalar_op_test_case(method_name, scalar):
             return
 
         shape = (3, 3)
@@ -124,8 +123,11 @@ class TestTensorExhaustive:
             self._assert_tensor_eq_np(t_res, np_res)
 
     @pytest.mark.parametrize("method_name, py_op, np_op", UNARY_OPS)
-    @pytest.mark.parametrize("shape", [(10,), (5, 5), (2, 3, 4)])
+    @pytest.mark.parametrize("shape", SHAPES)
     def test_unary_op(self, method_name, py_op, np_op, shape):
+        if self._verify_unary_op_test_case(method_name, shape):
+            return
+
         np_a = np.random.randn(*shape).astype(np.float32)
         t_a = Tensor.from_np(np_a)
 
@@ -179,3 +181,25 @@ class TestTensorExhaustive:
                     py_op(t_a, t_b)
                 else:
                     py_op(t_a, t_b)
+
+    def _verify_unary_op_test_case(
+        self, method_name: str, shape: tuple[int, ...]
+    ) -> bool:
+        # decides when test case should be skipped
+
+        # skip shapes for transpose
+        if method_name == "T" and len(shape) != 2:
+            return True
+
+        return False
+
+    def _verify_tensor_scalar_op_test_case(
+        self, method_name: str, scalar: float
+    ) -> bool:
+        # decides when test case should be skipped
+
+        # proof against div by 0
+        if method_name == "div" and abs(scalar) < 1e-5:
+            return True
+
+        return False

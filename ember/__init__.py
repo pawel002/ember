@@ -1,6 +1,7 @@
 # expose random module
 from . import random
 from .tensor.tensor import (
+    T,
     Tensor,
     cos,
     cosh,
@@ -29,4 +30,5 @@ __all__ = [
     "tanh",
     "ctgh",
     "random",
+    "T",
 ]

@@ -39,6 +39,7 @@ from ember._core import (
     _tanh,
     # tensor and its operators
     _Tensor,
+    _transpose,
     _truediv_scalar,
     _truediv_tensor,
 )
@@ -198,16 +199,12 @@ def _binary_op_wrapper(
 
 
 def _unary_op_wrapper(a: Tensor, op_symbol: str, tensor_op: TensorUnaryOp) -> Tensor:
-    result_core = None
-    if isinstance(a, Tensor):
-        result_core = tensor_op(a._core)
-
-    if result_core is None:
+    if not isinstance(a, Tensor):
         raise TypeError(
-            f"Ember operator {op_symbol} doesn't support '{type(a).__name__}', only Tensors"
+            f"Ember operator ember.{op_symbol} doesn't support '{type(a).__name__}', only Tensors"
         )
 
-    return Tensor._from_core(result_core, a.shape, a.dtype)
+    return Tensor._from_core(tensor_op(a._core), a.shape, a.dtype)
 
 
 # standalone binary methods
@@ -242,7 +239,6 @@ def ctg(a: Tensor) -> Tensor:
 
 
 # hyper trig
-# trig
 def sinh(a: Tensor) -> Tensor:
     return _unary_op_wrapper(a, "sinh()", _sinh)
 
@@ -257,3 +253,18 @@ def tanh(a: Tensor) -> Tensor:
 
 def ctgh(a: Tensor) -> Tensor:
     return _unary_op_wrapper(a, "ctgh()", _ctgh)
+
+
+# transpose
+def T(a: Tensor) -> Tensor:
+    if not isinstance(a, Tensor):
+        raise TypeError(
+            f"Ember operator ember.T() doesn't support '{type(a).__name__}', only Tensors"
+        )
+
+    if (dim := len(a.shape)) != 2:
+        raise ValueError(f"You can only transpose 2D matrices, not {dim}D")
+
+    new_shape = (a.shape[1], a.shape[0])
+    result_core = _transpose(a._core, *a.shape)
+    return Tensor._from_core(result_core, new_shape, a.dtype)

@@ -27,6 +27,7 @@ from ._tensor import (
     _tan,
     _tanh,
     _Tensor,
+    _transpose,
     _truediv_scalar,
     _truediv_tensor,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "_tanh",
     "_ctgh",
     "_exponent",
+    "_transpose",
     "_from_numpy",
     # distributions
     "_uniform",

@@ -30,19 +30,20 @@ void negate(const float *a, float *out, int size);
 void exponent(const float *a, float *out, int size);
 
 // unary trigonometric
-void t_sin(const float *a, float *out, int size);
-void t_cos(const float *a, float *out, int size);
-void t_tan(const float *a, float *out, int size);
-void t_ctg(const float *a, float *out, int size);
+void sin_tensor(const float *a, float *out, int size);
+void cos_tensor(const float *a, float *out, int size);
+void tan_tensor(const float *a, float *out, int size);
+void ctg_tensor(const float *a, float *out, int size);
 
 // unary trigonometric hyperbolic
-void t_sinh(const float *a, float *out, int size);
-void t_cosh(const float *a, float *out, int size);
-void t_tanh(const float *a, float *out, int size);
-void t_ctgh(const float *a, float *out, int size);
+void sinh_tensor(const float *a, float *out, int size);
+void cosh_tensor(const float *a, float *out, int size);
+void tanh_tensor(const float *a, float *out, int size);
+void ctgh_tensor(const float *a, float *out, int size);
 
 // misc operators
-void simple_matmul(const float *a, const float *b, float *out, int n, int m, int k);
+void matmul(const float *a, const float *b, float *out, int n, int m, int k);
+void transpose(const float *a, float *out, int n, int m);
 
 #ifdef __cplusplus
 }
