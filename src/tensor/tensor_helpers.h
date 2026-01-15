@@ -31,3 +31,19 @@ static PyObject *build_nested_list(float *data, long *dims, int ndim, int curren
 
     return list;
 }
+
+static int tuple_to_array(PyObject *tuple, int **array_out, int *size_out)
+{
+    int size = (int)PyTuple_GET_SIZE(tuple);
+    int *array = (int *)malloc(size * sizeof(int));
+    if (!array) return -1;
+
+    for (int i = 0; i < size; i++) {
+        PyObject *item = PyTuple_GET_ITEM(tuple, i);
+        array[i] = (int)PyLong_AsLong(item);
+    }
+
+    *array_out = array;
+    *size_out = (int)size;
+    return 0;
+}

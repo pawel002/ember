@@ -28,6 +28,36 @@ def _max_scalar(a: _Tensor, b: float) -> _Tensor: ...
 def _min_scalar(a: _Tensor, b: float) -> _Tensor: ...
 def _gt_scalar(a: _Tensor, b: float) -> _Tensor: ...
 
+# broadcasted operators
+def _add_broadcasted(
+    a: _Tensor,
+    b: _Tensor,
+    out_shape: tuple[int, ...],
+    strides_a: tuple[int, ...],
+    strides_b: tuple[int, ...],
+) -> _Tensor: ...
+def _sub_broadcasted(
+    a: _Tensor,
+    b: _Tensor,
+    out_shape: tuple[int, ...],
+    strides_a: tuple[int, ...],
+    strides_b: tuple[int, ...],
+) -> _Tensor: ...
+def _mul_broadcasted(
+    a: _Tensor,
+    b: _Tensor,
+    out_shape: tuple[int, ...],
+    strides_a: tuple[int, ...],
+    strides_b: tuple[int, ...],
+) -> _Tensor: ...
+def _truediv_broadcasted(
+    a: _Tensor,
+    b: _Tensor,
+    out_shape: tuple[int, ...],
+    strides_a: tuple[int, ...],
+    strides_b: tuple[int, ...],
+) -> _Tensor: ...
+
 # unary operators
 def _negate(a: _Tensor) -> _Tensor: ...
 def _exponent(a: _Tensor) -> _Tensor: ...

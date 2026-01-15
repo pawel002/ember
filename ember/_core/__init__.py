@@ -1,5 +1,6 @@
 from ._em_random import _constant, _uniform
 from ._tensor import (
+    _add_broadcasted,
     _add_scalar,
     _add_tensor,
     _cos,
@@ -15,6 +16,7 @@ from ._tensor import (
     _max_tensor,
     _min_scalar,
     _min_tensor,
+    _mul_broadcasted,
     _mul_scalar,
     _mul_tensor,
     _negate,
@@ -22,6 +24,7 @@ from ._tensor import (
     _rtruediv_scalar,
     _sin,
     _sinh,
+    _sub_broadcasted,
     _sub_scalar,
     _sub_tensor,
     _sum,
@@ -30,10 +33,17 @@ from ._tensor import (
     _tanh,
     _Tensor,
     _transpose,
+    _truediv_broadcasted,
     _truediv_scalar,
     _truediv_tensor,
 )
-from ._types import Scalar, TensorBinaryOp, TensorScalarOp, TensorUnaryOp
+from ._types import (
+    Scalar,
+    TensorBinaryOp,
+    TensorBroadcastedOp,
+    TensorScalarOp,
+    TensorUnaryOp,
+)
 
 __all__ = [
     # types
@@ -41,6 +51,7 @@ __all__ = [
     "TensorBinaryOp",
     "TensorScalarOp",
     "TensorUnaryOp",
+    "TensorBroadcastedOp",
     "Scalar",
     # tensor methods
     "_add_tensor",
@@ -71,6 +82,10 @@ __all__ = [
     "_ctgh",
     "_exponent",
     "_transpose",
+    "_add_broadcasted",
+    "_sub_broadcasted",
+    "_mul_broadcasted",
+    "_truediv_broadcasted",
     "_sum",
     "_sum_axis",
     "_from_numpy",

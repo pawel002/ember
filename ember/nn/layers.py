@@ -1,9 +1,9 @@
 import math
 
-from base import Layer
-
 import ember as em
 from ember.tensor import Tensor
+
+from .base import Layer
 
 
 class Linear(Layer):
@@ -26,7 +26,7 @@ class Linear(Layer):
         self.x = None
         self.y = None
 
-        scale = math.sqrt(self.in_features)
+        scale = 1.0 / math.sqrt(self.in_features)
         self.w = em.random.uniform(
             -scale, scale, size=(self.in_features, self.out_features)
         )
@@ -47,10 +47,11 @@ class Linear(Layer):
         self.y = self.b + x @ self.w
         return self.y
 
-    # TODO implement transposition and summation
+    def backward(self, grad_y: Tensor) -> Tensor:
+        assert self.x, "self.x needed for backward()"
+        assert self.w, "self.w needed for backward()"
 
-    # def backward(self, grad_y: Tensor) -> Tensor:
-    #     self.grad_w = self.x.T @ grad_y
-    #     self.grad_b = grad_y.sum(axis=0)
-    #     grad_x = grad_y @ self.w.T
-    #     return grad_x
+        self.grad_w = em.T(self.x) @ grad_y
+        self.grad_b = em.sum(grad_y, axis=0)  # type: ignore
+        grad_x = grad_y @ em.T(self.w)
+        return grad_x

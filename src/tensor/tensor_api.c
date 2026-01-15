@@ -7,9 +7,37 @@
 #include "operators.h"
 #include "tensor_helpers.h"
 
+#define OP_METHOD(NAME) {#NAME, (PyCFunction)NAME, METH_VARARGS, "Element-wise " #NAME " operation"}
+
+#define TENSOR_TENSOR_OP_WRAPPER(NAME, FUNC)                \
+    static PyObject *NAME(PyObject *module, PyObject *args) \
+    {                                                       \
+        return impl_tensor_binary_op(module, args, FUNC);   \
+    }
+
+#define TENSOR_SCALAR_OP_WRAPPER(NAME, FUNC)                \
+    static PyObject *NAME(PyObject *module, PyObject *args) \
+    {                                                       \
+        return impl_float_binary_op(module, args, FUNC);    \
+    }
+
+#define TENSOR_OP_WRAPPER(NAME, FUNC)                       \
+    static PyObject *NAME(PyObject *module, PyObject *args) \
+    {                                                       \
+        return _impl_tensor_unary_op(module, args, FUNC);   \
+    }
+
+#define TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(NAME, FUNC)              \
+    static PyObject *NAME(PyObject *module, PyObject *args)           \
+    {                                                                 \
+        return impl_tensor_broadcasted_binary_op(module, args, FUNC); \
+    }
+
 typedef void (*binary_tensor_op_func)(const float *, const float *, float *, int);
 typedef void (*binary_scalar_op_func)(const float *, const float, float *, int);
 typedef void (*unary_tensor_op_func)(const float *, float *, int);
+typedef void (*binary_tensor_broadcasted_op_func)(const float *, const float *, float *,
+                                                  const int *, const int *, const int *, int);
 
 static PyTypeObject _TensorType;
 
@@ -128,7 +156,7 @@ static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
     return arr;
 }
 
-static PyObject *_tensor_from_numpy(PyObject *module, PyObject *args)
+static PyObject *_from_numpy(PyObject *module, PyObject *args)
 {
     PyObject *obj;
 
@@ -228,6 +256,61 @@ static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_s
     return (PyObject *)result;
 }
 
+static PyObject *impl_tensor_broadcasted_binary_op(PyObject *module, PyObject *args,
+                                                   binary_tensor_broadcasted_op_func op)
+{
+    _Tensor *a, *b;
+    PyObject *shape_tuple, *strides_a_tuple, *strides_b_tuple;
+
+    if (!PyArg_ParseTuple(args, "O!O!O!O!O!", &_TensorType, &a, &_TensorType, &b, &PyTuple_Type,
+                          &shape_tuple, &PyTuple_Type, &strides_a_tuple, &PyTuple_Type,
+                          &strides_b_tuple)) {
+        return NULL;
+    }
+
+    int ndim_chk1, ndim_chk2;
+    int *c_shape, *c_strides_a, *c_strides_b, ndim = 0;
+    if (tuple_to_array(shape_tuple, &c_shape, &ndim) < 0) goto cleanup;
+    if (tuple_to_array(strides_a_tuple, &c_strides_a, &ndim_chk1) < 0) goto cleanup;
+    if (tuple_to_array(strides_b_tuple, &c_strides_b, &ndim_chk2) < 0) goto cleanup;
+
+    if (ndim != ndim_chk1 || ndim != ndim_chk2) {
+        PyErr_SetString(PyExc_ValueError, "Dimension mismatch in broadcast arguments");
+        goto cleanup;
+    }
+
+    int total_elements = 1;
+    for (int i = 0; i < ndim; i++) {
+        total_elements *= c_shape[i];
+    }
+
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) goto cleanup;
+
+    result->size = total_elements;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
+        goto cleanup;
+    }
+
+    op(a->d_ptr, b->d_ptr, result->d_ptr, c_shape, c_strides_a, c_strides_b, ndim);
+
+    free(c_shape);
+    free(c_strides_a);
+    free(c_strides_b);
+
+    return (PyObject *)result;
+
+cleanup:
+    if (c_shape) free(c_shape);
+    if (c_strides_a) free(c_strides_a);
+    if (c_strides_b) free(c_strides_b);
+    return NULL;
+}
+
 // unary operators
 static PyObject *_impl_tensor_unary_op(PyObject *module, PyObject *args, unary_tensor_op_func op)
 {
@@ -249,140 +332,58 @@ static PyObject *_impl_tensor_unary_op(PyObject *module, PyObject *args, unary_t
     return (PyObject *)result;
 }
 
-// binary tensor operators
-static PyObject *_add_tensor(PyObject *module, PyObject *args)
-{
-    return impl_tensor_binary_op(module, args, add_tensor);
-}
+// arithmetic operations
+// add
+TENSOR_TENSOR_OP_WRAPPER(_add_tensor, add_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_add_scalar, add_scalar)
+TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_add_broadcasted, add_broadcasted)
 
-static PyObject *_sub_tensor(PyObject *module, PyObject *args)
-{
-    return impl_tensor_binary_op(module, args, sub_tensor);
-}
+// subtract
+TENSOR_TENSOR_OP_WRAPPER(_sub_tensor, sub_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_sub_scalar, sub_scalar)
+TENSOR_SCALAR_OP_WRAPPER(_rsub_scalar, rsub_scalar)
+TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_sub_broadcasted, sub_broadcasted)
 
-static PyObject *_mul_tensor(PyObject *module, PyObject *args)
-{
-    return impl_tensor_binary_op(module, args, mul_tensor);
-}
+// multiply
+TENSOR_TENSOR_OP_WRAPPER(_mul_tensor, mul_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_mul_scalar, mul_scalar)
+TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_mul_broadcasted, mul_broadcasted)
 
-static PyObject *_truediv_tensor(PyObject *module, PyObject *args)
-{
-    return impl_tensor_binary_op(module, args, truediv_tensor);
-}
+// true division
+TENSOR_TENSOR_OP_WRAPPER(_truediv_tensor, truediv_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_truediv_scalar, truediv_scalar)
+TENSOR_SCALAR_OP_WRAPPER(_rtruediv_scalar, rtruediv_scalar)
+TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_truediv_broadcasted, truediv_broadcasted)
 
-static PyObject *_max_tensor(PyObject *module, PyObject *args)
-{
-    return impl_tensor_binary_op(module, args, max_tensor);
-}
+// comparison operations
+// max
+TENSOR_TENSOR_OP_WRAPPER(_max_tensor, max_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_max_scalar, max_scalar)
 
-static PyObject *_min_tensor(PyObject *module, PyObject *args)
-{
-    return impl_tensor_binary_op(module, args, min_tensor);
-}
+// min
+TENSOR_TENSOR_OP_WRAPPER(_min_tensor, min_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_min_scalar, min_scalar)
 
-static PyObject *_gt_tensor(PyObject *module, PyObject *args)
-{
-    return impl_tensor_binary_op(module, args, gt_tensor);
-}
+// greater than
+TENSOR_TENSOR_OP_WRAPPER(_gt_tensor, gt_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_gt_scalar, gt_scalar)
 
-// binary scalar operators
-static PyObject *_add_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, add_scalar);
-}
+// unary tensor operations
+// functions
+TENSOR_OP_WRAPPER(_negate, negate_tensor)
+TENSOR_OP_WRAPPER(_exponent, exponent_tensor)
 
-static PyObject *_sub_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, sub_scalar);
-}
+// trigonometric
+TENSOR_OP_WRAPPER(_sin, sin_tensor)
+TENSOR_OP_WRAPPER(_cos, cos_tensor)
+TENSOR_OP_WRAPPER(_tan, tan_tensor)
+TENSOR_OP_WRAPPER(_ctg, ctg_tensor)
 
-static PyObject *_rsub_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, rsub_scalar);
-}
-
-static PyObject *_mul_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, mul_scalar);
-}
-
-static PyObject *_truediv_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, truediv_scalar);
-}
-
-static PyObject *_rtruediv_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, rtruediv_scalar);
-}
-
-static PyObject *_max_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, max_scalar);
-}
-
-static PyObject *_min_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, min_scalar);
-}
-
-static PyObject *_gt_scalar(PyObject *module, PyObject *args)
-{
-    return impl_float_binary_op(module, args, gt_scalar);
-}
-
-// unary tensor ops
-static PyObject *_negate(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, negate);
-}
-
-static PyObject *_exponent(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, exponent);
-}
-
-// unary trigonometric tensor ops
-static PyObject *_sin(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, sin_tensor);
-}
-
-static PyObject *_cos(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, cos_tensor);
-}
-
-static PyObject *_tan(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, tan_tensor);
-}
-
-static PyObject *_ctg(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, ctg_tensor);
-}
-
-// unary trigonometric hyperbolic tensor ops
-static PyObject *_sinh(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, sinh_tensor);
-}
-
-static PyObject *_cosh(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, cosh_tensor);
-}
-
-static PyObject *_tanh(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, tanh_tensor);
-}
-
-static PyObject *_ctgh(PyObject *module, PyObject *args)
-{
-    return _impl_tensor_unary_op(module, args, ctgh_tensor);
-}
+// trigonometric hyperbolic
+TENSOR_OP_WRAPPER(_sinh, sinh_tensor)
+TENSOR_OP_WRAPPER(_cosh, cosh_tensor)
+TENSOR_OP_WRAPPER(_tanh, tanh_tensor)
+TENSOR_OP_WRAPPER(_ctgh, ctgh_tensor)
 
 // misc operators
 static PyObject *_matmul(PyObject *module, PyObject *args)
@@ -459,14 +460,8 @@ static PyObject *_sum_axis(PyObject *module, PyObject *args)
     if (!PyArg_ParseTuple(args, "O!O!i", &_TensorType, &a, &PyTuple_Type, &a_shape_obj, &axis))
         return NULL;
 
-    int a_dim = (int)PyTuple_GET_SIZE(a_shape_obj);
-    int *a_shape = (int *)malloc(a_dim * sizeof(int));
-    if (!a_shape) return PyErr_NoMemory();
-
-    for (int i = 0; i < a_dim; i++) {
-        PyObject *item = PyTuple_GET_ITEM(a_shape_obj, i);
-        a_shape[i] = (int)PyLong_AsLong(item);
-    }
+    int a_dim, *a_shape;
+    tuple_to_array(a_shape_obj, &a_shape, &a_dim);
 
     int outer_stride = sum_axis_product(a_shape, 0, axis);
     int axis_dim = a_shape[axis];
@@ -502,37 +497,62 @@ static PyMemberDef _Tensor_members[] = {
 
 // Methods attached to the MODULE (Standalone functions)
 static PyMethodDef module_methods[] = {
-    {"_add_tensor", (PyCFunction)_add_tensor, METH_VARARGS, "T + T"},
-    {"_sub_tensor", (PyCFunction)_sub_tensor, METH_VARARGS, "T - T"},
-    {"_mul_tensor", (PyCFunction)_mul_tensor, METH_VARARGS, "T * T"},
-    {"_truediv_tensor", (PyCFunction)_truediv_tensor, METH_VARARGS, "T / T"},
-    {"_max_tensor", (PyCFunction)_max_tensor, METH_VARARGS, "max(T, T)"},
-    {"_min_tensor", (PyCFunction)_min_tensor, METH_VARARGS, "min(T, T)"},
-    {"_gt_tensor", (PyCFunction)_gt_tensor, METH_VARARGS, "T > T"},
-    {"_add_scalar", (PyCFunction)_add_scalar, METH_VARARGS, "T + float"},
-    {"_sub_scalar", (PyCFunction)_sub_scalar, METH_VARARGS, "T - float"},
-    {"_rsub_scalar", (PyCFunction)_rsub_scalar, METH_VARARGS, "float - T"},
-    {"_mul_scalar", (PyCFunction)_mul_scalar, METH_VARARGS, "T * float"},
-    {"_truediv_scalar", (PyCFunction)_truediv_scalar, METH_VARARGS, "T / float"},
-    {"_rtruediv_scalar", (PyCFunction)_rtruediv_scalar, METH_VARARGS, "float / T"},
-    {"_max_scalar", (PyCFunction)_max_scalar, METH_VARARGS, "max(T, float)"},
-    {"_min_scalar", (PyCFunction)_min_scalar, METH_VARARGS, "min(T, float)"},
-    {"_gt_scalar", (PyCFunction)_gt_scalar, METH_VARARGS, "T > float"},
-    {"_negate", (PyCFunction)_negate, METH_VARARGS, "-T"},
-    {"_exponent", (PyCFunction)_exponent, METH_VARARGS, "exp(T)"},
-    {"_sin", (PyCFunction)_sin, METH_VARARGS, "sin(T)"},
-    {"_cos", (PyCFunction)_cos, METH_VARARGS, "cos(T)"},
-    {"_tan", (PyCFunction)_tan, METH_VARARGS, "tan(T)"},
-    {"_ctg", (PyCFunction)_ctg, METH_VARARGS, "ctg(T)"},
-    {"_sinh", (PyCFunction)_sinh, METH_VARARGS, "sinh(T)"},
-    {"_cosh", (PyCFunction)_cosh, METH_VARARGS, "cosh(T)"},
-    {"_tanh", (PyCFunction)_tanh, METH_VARARGS, "tanh(T)"},
-    {"_ctgh", (PyCFunction)_ctgh, METH_VARARGS, "ctgh(T)"},
-    {"_matmul", (PyCFunction)_matmul, METH_VARARGS, "T @ T"},
-    {"_transpose", (PyCFunction)_transpose, METH_VARARGS, "transpose(T)"},
-    {"_sum", (PyCFunction)_sum, METH_VARARGS, "sum(T)"},
-    {"_sum_axis", (PyCFunction)_sum_axis, METH_VARARGS, "sum_axis(T, axis)"},
-    {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS, "T from np"},
+    // arithmetic operations
+    // add
+    OP_METHOD(_add_tensor),
+    OP_METHOD(_add_scalar),
+    OP_METHOD(_add_broadcasted),
+    // subtract
+    OP_METHOD(_sub_tensor),
+    OP_METHOD(_sub_scalar),
+    OP_METHOD(_rsub_scalar),
+    OP_METHOD(_sub_broadcasted),
+    // multiply
+    OP_METHOD(_mul_tensor),
+    OP_METHOD(_mul_scalar),
+    OP_METHOD(_mul_broadcasted),
+    // true division
+    OP_METHOD(_truediv_tensor),
+    OP_METHOD(_truediv_scalar),
+    OP_METHOD(_rtruediv_scalar),
+    OP_METHOD(_truediv_broadcasted),
+
+    // comparison operators
+    // max
+    OP_METHOD(_max_tensor),
+    OP_METHOD(_max_scalar),
+    // min
+    OP_METHOD(_min_tensor),
+    OP_METHOD(_min_scalar),
+    // greater than
+    OP_METHOD(_gt_tensor),
+    OP_METHOD(_gt_scalar),
+
+    // unary operators
+    // arithmetic
+    OP_METHOD(_negate),
+    OP_METHOD(_exponent),
+    // trigonometric
+    OP_METHOD(_sin),
+    OP_METHOD(_cos),
+    OP_METHOD(_tan),
+    OP_METHOD(_ctg),
+    // trigonometric hyperbolic
+    OP_METHOD(_sinh),
+    OP_METHOD(_cosh),
+    OP_METHOD(_tanh),
+    OP_METHOD(_ctgh),
+
+    // misc
+    OP_METHOD(_matmul),
+    OP_METHOD(_transpose),
+    OP_METHOD(_from_numpy),
+
+    // summations
+    OP_METHOD(_sum),
+    OP_METHOD(_sum_axis),
+
+    // end
     {NULL}};
 
 static PyTypeObject _TensorType = {

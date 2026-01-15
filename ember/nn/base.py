@@ -23,7 +23,7 @@ class Layer(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def gradients(self) -> list[Tensor]:
+    def gradients(self) -> list[Tensor | None]:
         raise NotImplementedError
 
     @abstractmethod
@@ -43,7 +43,7 @@ class Activation(Layer):
     def parameters(self) -> list[Tensor]:
         return []
 
-    def gradients(self) -> list[Tensor]:
+    def gradients(self) -> list[Tensor | None]:
         return []
 
 
@@ -71,5 +71,5 @@ class Sequential(Layer):
     def parameters(self) -> list[Tensor]:
         return list(chain.from_iterable(layer.parameters() for layer in self.layers))
 
-    def gradients(self) -> list[Tensor]:
+    def gradients(self) -> list[Tensor | None]:
         return list(chain.from_iterable(layer.gradients() for layer in self.layers))

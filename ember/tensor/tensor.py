@@ -9,8 +9,10 @@ from numpy.typing import NDArray
 from ember._core import (
     # types
     TensorBinaryOp,
+    TensorBroadcastedOp,
     TensorScalarOp,
     TensorUnaryOp,
+    _add_broadcasted,
     _add_scalar,
     _add_tensor,
     _cos,
@@ -26,6 +28,7 @@ from ember._core import (
     _max_tensor,
     _min_scalar,
     _min_tensor,
+    _mul_broadcasted,
     _mul_scalar,
     _mul_tensor,
     _negate,
@@ -33,6 +36,7 @@ from ember._core import (
     _rtruediv_scalar,
     _sin,
     _sinh,
+    _sub_broadcasted,
     _sub_scalar,
     _sub_tensor,
     _sum,
@@ -42,11 +46,16 @@ from ember._core import (
     # tensor and its operators
     _Tensor,
     _transpose,
+    _truediv_broadcasted,
     _truediv_scalar,
     _truediv_tensor,
 )
 
-from .tensor_utils import extract_data_info
+from .tensor_utils import (
+    calculate_broadcast,
+    calculate_contiguous_strides,
+    extract_data_info,
+)
 
 Types = Literal["int32", "float32"]
 BinaryOpType = Union["Tensor", float, int]
@@ -61,6 +70,7 @@ class Tensor:
     def __init__(self, data: Any):
         shape, dtype_cls, flat_data = extract_data_info(data)
         self.shape = shape
+        self.strides = calculate_contiguous_strides(self.shape)
         self.dtype = _Types_lookup.get(dtype_cls, "float32")
         self._core = _Tensor(math.prod(shape))
         self._core._copy_from_list(flat_data)
@@ -71,6 +81,7 @@ class Tensor:
 
         obj._core = core
         obj.shape = shape
+        obj.strides = calculate_contiguous_strides(obj.shape)
         obj.dtype = dtype
 
         return obj
@@ -82,30 +93,39 @@ class Tensor:
         # for now force casted to f32
         obj._core = _from_numpy(array.astype(np.float32))
         obj.shape = tuple(array.shape)
+        obj.strides = calculate_contiguous_strides(obj.shape)
         obj.dtype = "float32"
 
         return obj
 
     def __add__(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "+", _add_tensor, _add_scalar)
+        return _binary_op_wrapper(
+            self, other, "+", _add_tensor, _add_scalar, _add_broadcasted
+        )
 
     def __radd__(self, other: BinaryOpType) -> Tensor:
         return self + other
 
     def __sub__(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "-", _sub_tensor, _sub_scalar)
+        return _binary_op_wrapper(
+            self, other, "-", _sub_tensor, _sub_scalar, _sub_broadcasted
+        )
 
     def __rsub__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "-", _sub_tensor, _rsub_scalar)
 
     def __mul__(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "*", _mul_tensor, _mul_scalar)
+        return _binary_op_wrapper(
+            self, other, "*", _mul_tensor, _mul_scalar, _mul_broadcasted
+        )
 
     def __rmul__(self, other: BinaryOpType) -> Tensor:
-        return self.__mul__(other)
+        return self * other
 
     def __truediv__(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "/", _truediv_tensor, _truediv_scalar)
+        return _binary_op_wrapper(
+            self, other, "/", _truediv_tensor, _truediv_scalar, _truediv_broadcasted
+        )
 
     def __rtruediv__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "/", _truediv_tensor, _rtruediv_scalar)
@@ -168,6 +188,7 @@ class Tensor:
             raise ValueError(f"Cannot reshape size {total_elements} into {new_shape}")
 
         self.shape = new_shape
+        self.strides = calculate_contiguous_strides(self.shape)
         return self
 
     def __repr__(self):
@@ -180,24 +201,34 @@ def _binary_op_wrapper(
     op_symbol: str,
     tensor_op: TensorBinaryOp,
     float_op: TensorScalarOp,
+    tensor_broadcast_op: TensorBroadcastedOp | None = None,
 ) -> Tensor:
-    result_core = None
-    if isinstance(b, Tensor):
-        if a.shape != b.shape:
-            raise ValueError(
-                f"Shape mismatch: {a.shape} cannot {op_symbol} with {b.shape}"
-            )
-        result_core = tensor_op(a._core, b._core)
-
-    elif isinstance(b, (float, int)):
+    # handle scalar operations
+    if isinstance(b, (float, int)):
         result_core = float_op(a._core, float(b))
+        return Tensor._from_core(result_core, a.shape, a.dtype)
 
-    if result_core is None:
-        raise TypeError(
-            f"Unsupported operand type(s) for {op_symbol}: Tensor and '{type(b).__name__}'"
+    # handle tensor vs tensor operations
+    if isinstance(b, Tensor):
+        if a.shape == b.shape:
+            result_core = tensor_op(a._core, b._core)
+            return Tensor._from_core(result_core, a.shape, a.dtype)
+
+        if tensor_broadcast_op is not None:
+            out_shape, str_a, str_b = calculate_broadcast(
+                a.shape, a.strides, b.shape, b.strides
+            )
+            result_core = tensor_broadcast_op(a._core, b._core, out_shape, str_a, str_b)
+            return Tensor._from_core(result_core, out_shape, a.dtype)
+
+        raise ValueError(
+            f"Operands with shapes {a.shape} and {b.shape} do not match, "
+            f"and operation '{op_symbol}' does not support broadcasting."
         )
 
-    return Tensor._from_core(result_core, a.shape, a.dtype)
+    raise TypeError(
+        f"Unsupported operand type(s) for {op_symbol}: Tensor and '{type(b).__name__}'"
+    )
 
 
 def _unary_op_wrapper(a: Tensor, op_symbol: str, tensor_op: TensorUnaryOp) -> Tensor:

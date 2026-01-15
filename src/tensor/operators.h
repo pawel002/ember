@@ -5,48 +5,64 @@
 extern "C" {
 #endif
 
-// tensor operators
-void add_tensor(const float *a, const float *b, float *out, int size);
-void sub_tensor(const float *a, const float *b, float *out, int size);
-void mul_tensor(const float *a, const float *b, float *out, int size);
-void truediv_tensor(const float *a, const float *b, float *out, int size);
-void max_tensor(const float *a, const float *b, float *out, int size);
-void min_tensor(const float *a, const float *b, float *out, int size);
-void gt_tensor(const float *a, const float *b, float *out, int size);
+#define BINARY_OP(NAME) void NAME##_tensor(const float *a, const float *b, float *out, int size)
+#define SCALAR_OP(NAME) void NAME##_scalar(const float *a, const float b, float *out, int size)
+#define UNARY_OP(NAME) void NAME##_tensor(const float *a, float *out, int size)
+#define BROADCAST_OP(NAME)                                                                \
+    void NAME##_broadcasted(const float *a, const float *b, float *out, const int *shape, \
+                            const int *strides_a, const int *strides_b, int dim);
 
-// scalar oprator
-void add_scalar(const float *a, const float b, float *out, int size);
-void sub_scalar(const float *a, const float b, float *out, int size);
-void rsub_scalar(const float *a, const float b, float *out, int size);
-void mul_scalar(const float *a, const float b, float *out, int size);
-void truediv_scalar(const float *a, const float b, float *out, int size);
-void rtruediv_scalar(const float *a, const float b, float *out, int size);
-void max_scalar(const float *a, const float b, float *out, int size);
-void min_scalar(const float *a, const float b, float *out, int size);
-void gt_scalar(const float *a, const float b, float *out, int size);
+// tensor operations
+BINARY_OP(add);
+BINARY_OP(sub);
+BINARY_OP(mul);
+BINARY_OP(truediv);
+BINARY_OP(max);
+BINARY_OP(min);
+BINARY_OP(gt);
 
-// unary operators
-void negate(const float *a, float *out, int size);
-void exponent(const float *a, float *out, int size);
+// scalar operations
+SCALAR_OP(add);
+SCALAR_OP(sub);
+SCALAR_OP(rsub);
+SCALAR_OP(mul);
+SCALAR_OP(truediv);
+SCALAR_OP(rtruediv);
+SCALAR_OP(max);
+SCALAR_OP(min);
+SCALAR_OP(gt);
 
-// unary trigonometric
-void sin_tensor(const float *a, float *out, int size);
-void cos_tensor(const float *a, float *out, int size);
-void tan_tensor(const float *a, float *out, int size);
-void ctg_tensor(const float *a, float *out, int size);
+// broadcast operations
+BROADCAST_OP(add);
+BROADCAST_OP(sub);
+BROADCAST_OP(mul);
+BROADCAST_OP(truediv);
 
-// unary trigonometric hyperbolic
-void sinh_tensor(const float *a, float *out, int size);
-void cosh_tensor(const float *a, float *out, int size);
-void tanh_tensor(const float *a, float *out, int size);
-void ctgh_tensor(const float *a, float *out, int size);
+// manual unary operations
+UNARY_OP(negate);
+UNARY_OP(exponent);
 
-// misc operators
+UNARY_OP(sin);
+UNARY_OP(cos);
+UNARY_OP(tan);
+UNARY_OP(ctg);
+
+UNARY_OP(sinh);
+UNARY_OP(cosh);
+UNARY_OP(tanh);
+UNARY_OP(ctgh);
+
+// misc operations
 void matmul(const float *a, const float *b, float *out, int n, int m, int k);
 void transpose(const float *a, float *out, int n, int m);
 float sum(const float *a, int size);
 int sum_axis_product(int *shape, int start, int end);
 void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim);
+
+#undef BINARY_OP
+#undef SCALAR_OP
+#undef UNARY_OP
+#undef BROADCAST_OP
 
 #ifdef __cplusplus
 }

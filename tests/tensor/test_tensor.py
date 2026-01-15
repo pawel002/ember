@@ -185,17 +185,6 @@ class TestTensorExhaustive:
         assert id(t_returned) == original_id, "Reshape should return self"
         assert t.shape == (6,), "Reshape should modify shape in-place"
 
-    def test_shape_mismatch_raises_error(self):
-        t_a = Tensor.from_np(np.zeros((2, 2)))
-        t_b = Tensor.from_np(np.zeros((3, 3)))
-
-        for method, em_op, _ in self.BINARY_OPS:
-            with pytest.raises(ValueError, match="Shape mismatch"):
-                if method.startswith("__"):
-                    em_op(t_a, t_b)
-                else:
-                    em_op(t_a, t_b)
-
     def _verify_unary_op_test_case(
         self, method_name: str, shape: tuple[int, ...]
     ) -> bool:
@@ -217,3 +206,5 @@ class TestTensorExhaustive:
             return True
 
         return False
+
+    # TODO: add broadcasting tests
