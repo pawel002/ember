@@ -156,7 +156,37 @@ void transpose(const float *a, float *out, int n, int m)
 {
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++) {
-            out[j * m + i] = a[i * m + j];
+            out[j * n + i] = a[i * m + j];
+        }
+    }
+}
+
+float sum(const float *a, int size)
+{
+    float sum = 0.0f;
+    for (int i = 0; i < size; i++) sum += a[i];
+    return sum;
+}
+
+int sum_axis_product(int *shape, int start, int end)
+{
+    int p = 1;
+    for (int i = start; i < end; i++) p *= shape[i];
+    return p;
+}
+
+void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim)
+{
+    for (int o = 0; o < outer_stride; o++) {
+        for (int i = 0; i < inner_stride; i++) {
+            float sum = 0.0f;
+            int input_base = o * (axis_dim * inner_stride) + i;
+
+            for (int r = 0; r < axis_dim; r++) {
+                sum += a[input_base + (r * inner_stride)];
+            }
+
+            out[o * inner_stride + i] = sum;
         }
     }
 }

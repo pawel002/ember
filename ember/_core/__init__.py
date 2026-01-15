@@ -24,6 +24,8 @@ from ._tensor import (
     _sinh,
     _sub_scalar,
     _sub_tensor,
+    _sum,
+    _sum_axis,
     _tan,
     _tanh,
     _Tensor,
@@ -69,6 +71,8 @@ __all__ = [
     "_ctgh",
     "_exponent",
     "_transpose",
+    "_sum",
+    "_sum_axis",
     "_from_numpy",
     # distributions
     "_uniform",

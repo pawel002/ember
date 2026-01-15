@@ -44,6 +44,9 @@ void ctgh_tensor(const float *a, float *out, int size);
 // misc operators
 void matmul(const float *a, const float *b, float *out, int n, int m, int k);
 void transpose(const float *a, float *out, int n, int m);
+float sum(const float *a, int size);
+int sum_axis_product(int *shape, int start, int end);
+void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim);
 
 #ifdef __cplusplus
 }

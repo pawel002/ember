@@ -35,6 +35,8 @@ from ember._core import (
     _sinh,
     _sub_scalar,
     _sub_tensor,
+    _sum,
+    _sum_axis,
     _tan,
     _tanh,
     # tensor and its operators
@@ -111,7 +113,7 @@ class Tensor:
     def __gt__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, ">", _gt_tensor, _gt_scalar)
 
-    def __matmul__(self, other: BinaryOpType) -> Tensor:
+    def __matmul__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
             raise TypeError(
                 f"Unsupported operand type(s) for @: Tensor and '{type(other).__name__}'"
@@ -199,11 +201,7 @@ def _binary_op_wrapper(
 
 
 def _unary_op_wrapper(a: Tensor, op_symbol: str, tensor_op: TensorUnaryOp) -> Tensor:
-    if not isinstance(a, Tensor):
-        raise TypeError(
-            f"Ember operator ember.{op_symbol} doesn't support '{type(a).__name__}', only Tensors"
-        )
-
+    assert_tensor_unary(a, op_symbol)
     return Tensor._from_core(tensor_op(a._core), a.shape, a.dtype)
 
 
@@ -257,14 +255,37 @@ def ctgh(a: Tensor) -> Tensor:
 
 # transpose
 def T(a: Tensor) -> Tensor:
-    if not isinstance(a, Tensor):
-        raise TypeError(
-            f"Ember operator ember.T() doesn't support '{type(a).__name__}', only Tensors"
-        )
+    assert_tensor_unary(a, "T()")
 
     if (dim := len(a.shape)) != 2:
         raise ValueError(f"You can only transpose 2D matrices, not {dim}D")
 
-    new_shape = (a.shape[1], a.shape[0])
+    result_shape = (a.shape[1], a.shape[0])
     result_core = _transpose(a._core, *a.shape)
-    return Tensor._from_core(result_core, new_shape, a.dtype)
+    return Tensor._from_core(result_core, result_shape, a.dtype)
+
+
+# misc
+def sum(a: Tensor, axis: int | None = None) -> Tensor | float:
+    assert_tensor_unary(a, "sum()")
+
+    if axis is None:
+        return _sum(a._core)
+
+    a_dim = len(a.shape)
+    axis = axis if axis >= 0 else axis + a_dim
+
+    if axis < 0 or axis >= a_dim:
+        raise ValueError(f"Axis {axis} out of bound for {a_dim} dim Tensor")
+
+    result_shape = tuple(a.shape[i] for i in range(len(a.shape)) if i != axis)
+    result_core = _sum_axis(a._core, a.shape, axis)
+    return Tensor._from_core(result_core, result_shape, a.dtype)
+
+
+# verifiers
+def assert_tensor_unary(a: object, op_name: str):
+    if not isinstance(a, Tensor):
+        raise TypeError(
+            f"Ember operator ember.{op_name} doesn't support '{type(a).__name__}', only Tensors"
+        )

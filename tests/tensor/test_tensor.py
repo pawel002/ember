@@ -50,23 +50,23 @@ class TestTensorExhaustive:
             tensor_data, np_res.astype(np.float32), rtol=1e-5, atol=1e-5
         )
 
-    @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
+    @pytest.mark.parametrize("method_name, em_op, np_op", BINARY_OPS)
     @pytest.mark.parametrize("shape", SHAPES)
-    def test_binary_op_tensor_vs_tensor(self, method_name, py_op, np_op, shape):
+    def test_binary_op_tensor_vs_tensor(self, method_name, em_op, np_op, shape):
         np_a = np.random.randn(*shape).astype(np.float32)
         np_b = np.random.randn(*shape).astype(np.float32)
 
         t_a = Tensor.from_np(np_a)
         t_b = Tensor.from_np(np_b)
 
-        t_res = py_op(t_a, t_b)
+        t_res = em_op(t_a, t_b)
         np_res = np_op(np_a, np_b)
 
         self._assert_tensor_eq_np(t_res, np_res)
 
-    @pytest.mark.parametrize("method_name, py_op, np_op", BINARY_OPS)
+    @pytest.mark.parametrize("method_name, em_op, np_op", BINARY_OPS)
     @pytest.mark.parametrize("scalar", SCALAR_VALUES)
-    def test_binary_op_tensor_vs_scalar(self, method_name, py_op, np_op, scalar):
+    def test_binary_op_tensor_vs_scalar(self, method_name, em_op, np_op, scalar):
         if self._verify_tensor_scalar_op_test_case(method_name, scalar):
             return
 
@@ -74,14 +74,14 @@ class TestTensorExhaustive:
         np_a = np.random.randn(*shape).astype(np.float32)
         t_a = Tensor.from_np(np_a)
 
-        t_res = py_op(t_a, scalar)
+        t_res = em_op(t_a, scalar)
         np_res = np_op(np_a, scalar)
 
         self._assert_tensor_eq_np(t_res, np_res)
 
-    @pytest.mark.parametrize("method_name, py_op, np_op", REVERSABLE_OPS)
+    @pytest.mark.parametrize("method_name, em_op, np_op", REVERSABLE_OPS)
     @pytest.mark.parametrize("scalar", SCALAR_VALUES)
-    def test_rev_binary_op_scalar_vs_tensor(self, method_name, py_op, np_op, scalar):
+    def test_rev_binary_op_scalar_vs_tensor(self, method_name, em_op, np_op, scalar):
         if self._verify_tensor_scalar_op_test_case(method_name, scalar):
             return
 
@@ -89,7 +89,7 @@ class TestTensorExhaustive:
         np_a = np.random.randn(*shape).astype(np.float32)
         t_a = Tensor.from_np(np_a)
 
-        t_res = py_op(scalar, t_a)
+        t_res = em_op(scalar, t_a)
         np_res = np_op(scalar, np_a)
 
         self._assert_tensor_eq_np(t_res, np_res)
@@ -122,19 +122,33 @@ class TestTensorExhaustive:
             np_res = np_a @ np_b
             self._assert_tensor_eq_np(t_res, np_res)
 
-    @pytest.mark.parametrize("method_name, py_op, np_op", UNARY_OPS)
+    @pytest.mark.parametrize("method_name, em_op, np_op", UNARY_OPS)
     @pytest.mark.parametrize("shape", SHAPES)
-    def test_unary_op(self, method_name, py_op, np_op, shape):
+    def test_unary_op(self, method_name, em_op, np_op, shape):
         if self._verify_unary_op_test_case(method_name, shape):
             return
 
         np_a = np.random.randn(*shape).astype(np.float32)
         t_a = Tensor.from_np(np_a)
 
-        t_res = py_op(t_a)
+        t_res = em_op(t_a)
         np_res = np_op(np_a)
 
         self._assert_tensor_eq_np(t_res, np_res)
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_sum(self, shape):
+        np_a = np.random.randn(*shape).astype(np.float32)
+        t_a = Tensor.from_np(np_a)
+
+        for axis in range(len(shape)):
+            t_res = em.sum(t_a, axis=axis)
+            np_res = np.sum(np_a, axis=axis)
+
+            assert t_res.shape == np_res.shape
+            self._assert_tensor_eq_np(t_res, np_res)
+
+        assert (np.sum(np_a) - em.sum(t_a)) < 1e-5
 
     @pytest.mark.parametrize(
         "start_shape, target_shape, valid",
@@ -175,12 +189,12 @@ class TestTensorExhaustive:
         t_a = Tensor.from_np(np.zeros((2, 2)))
         t_b = Tensor.from_np(np.zeros((3, 3)))
 
-        for method, py_op, _ in self.BINARY_OPS:
+        for method, em_op, _ in self.BINARY_OPS:
             with pytest.raises(ValueError, match="Shape mismatch"):
                 if method.startswith("__"):
-                    py_op(t_a, t_b)
+                    em_op(t_a, t_b)
                 else:
-                    py_op(t_a, t_b)
+                    em_op(t_a, t_b)
 
     def _verify_unary_op_test_case(
         self, method_name: str, shape: tuple[int, ...]

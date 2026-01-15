@@ -425,11 +425,6 @@ static PyObject *_transpose(PyObject *module, PyObject *args)
     int n, m;
     if (!PyArg_ParseTuple(args, "O!ii", &_TensorType, &a, &n, &m)) return NULL;
 
-    if (a->size != n * m) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d", a->size, n, m);
-        return NULL;
-    }
-
     _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
     if (!result) return NULL;
 
@@ -442,6 +437,55 @@ static PyObject *_transpose(PyObject *module, PyObject *args)
     }
 
     transpose(a->d_ptr, result->d_ptr, n, m);
+    return (PyObject *)result;
+}
+
+static PyObject *_sum(PyObject *module, PyObject *args)
+{
+    _Tensor *a;
+    if (!PyArg_ParseTuple(args, "O!", &_TensorType, &a)) return NULL;
+
+    float result = sum(a->d_ptr, a->size);
+
+    return PyFloat_FromDouble((double)result);
+}
+
+static PyObject *_sum_axis(PyObject *module, PyObject *args)
+{
+    _Tensor *a;
+    PyObject *a_shape_obj;
+    int axis;
+
+    if (!PyArg_ParseTuple(args, "O!O!i", &_TensorType, &a, &PyTuple_Type, &a_shape_obj, &axis))
+        return NULL;
+
+    int a_dim = (int)PyTuple_GET_SIZE(a_shape_obj);
+    int *a_shape = (int *)malloc(a_dim * sizeof(int));
+    if (!a_shape) return PyErr_NoMemory();
+
+    for (int i = 0; i < a_dim; i++) {
+        PyObject *item = PyTuple_GET_ITEM(a_shape_obj, i);
+        a_shape[i] = (int)PyLong_AsLong(item);
+    }
+
+    int outer_stride = sum_axis_product(a_shape, 0, axis);
+    int axis_dim = a_shape[axis];
+    int inner_stride = sum_axis_product(a_shape, axis + 1, a_dim);
+
+    free(a_shape);
+
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) return NULL;
+
+    result->size = outer_stride * inner_stride;
+    result->d_ptr = alloc_memory(result->size * sizeof(float));
+
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+
+    sum_axis(a->d_ptr, result->d_ptr, outer_stride, inner_stride, axis_dim);
     return (PyObject *)result;
 }
 
@@ -486,6 +530,8 @@ static PyMethodDef module_methods[] = {
     {"_ctgh", (PyCFunction)_ctgh, METH_VARARGS, "ctgh(T)"},
     {"_matmul", (PyCFunction)_matmul, METH_VARARGS, "T @ T"},
     {"_transpose", (PyCFunction)_transpose, METH_VARARGS, "transpose(T)"},
+    {"_sum", (PyCFunction)_sum, METH_VARARGS, "sum(T)"},
+    {"_sum_axis", (PyCFunction)_sum_axis, METH_VARARGS, "sum_axis(T, axis)"},
     {"_from_numpy", (PyCFunction)_tensor_from_numpy, METH_VARARGS, "T from np"},
     {NULL}};
 
