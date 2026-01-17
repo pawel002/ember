@@ -12,6 +12,7 @@ from .tensor import (
     min,
     sin,
     sinh,
+    sqrt,
     sum,
     tan,
     tanh,
@@ -32,6 +33,7 @@ __all__ = [
     "ctgh",
     "T",
     "sum",
+    "sqrt",
     # modules
     "random",
     "nn",

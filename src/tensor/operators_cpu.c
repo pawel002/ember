@@ -52,6 +52,7 @@ BINARY_OP(max, fmaxf(a[i], b[i]))
 BINARY_OP(min, fminf(a[i], b[i]))
 BINARY_OP(gt, (a[i] > b[i]) ? 1.0f : 0.0f)
 BINARY_OP(lt, (a[i] < b[i]) ? 1.0f : 0.0f)
+BINARY_OP(pow, powf(a[i], b[i]))
 
 // scalar operator implementations
 SCALAR_OP(add, a[i] + b)
@@ -63,6 +64,8 @@ SCALAR_OP(max, fmaxf(a[i], b))
 SCALAR_OP(min, fminf(a[i], b))
 SCALAR_OP(gt, (a[i] > b) ? 1.0f : 0.0f)
 SCALAR_OP(lt, (a[i] < b) ? 1.0f : 0.0f)
+SCALAR_OP(pow, powf(a[i], b))
+SCALAR_OP(rpow, powf(b, a[i]))
 
 // optimization
 void truediv_scalar(const float *a, const float b, float *out, int size)
@@ -80,6 +83,7 @@ BROADCAST_OP(truediv, a[offset_a] / b[offset_b])
 // unary implementations
 UNARY_OP(negate, -a[i])
 UNARY_OP(exponent, expf(a[i]))
+UNARY_OP(sqrt, sqrtf(a[i]))
 
 UNARY_OP(sin, sinf(a[i]))
 UNARY_OP(cos, cosf(a[i]))

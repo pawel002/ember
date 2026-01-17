@@ -34,10 +34,14 @@ from ember._core import (
     _mul_scalar,
     _mul_tensor,
     _negate,
+    _pow_scalar,
+    _pow_tensor,
+    _rpow_scalar,
     _rsub_scalar,
     _rtruediv_scalar,
     _sin,
     _sinh,
+    _sqrt,
     _sub_broadcasted,
     _sub_scalar,
     _sub_tensor,
@@ -137,6 +141,12 @@ class Tensor:
 
     def __lt__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "<", _lt_tensor, _lt_scalar)
+
+    def __pow__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "**", _pow_tensor, _pow_scalar)
+
+    def __rpow__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "**", _pow_tensor, _rpow_scalar)
 
     def __matmul__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
@@ -273,6 +283,10 @@ def min(a: TensorLike, b: TensorLike) -> Tensor:
 # standalone unary methods
 def exp(a: Tensor) -> Tensor:
     return _unary_op_wrapper(a, "exp()", _exponent)
+
+
+def sqrt(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "sqrt()", _sqrt)
 
 
 # trig

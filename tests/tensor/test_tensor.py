@@ -16,6 +16,7 @@ class TestTensorExhaustive:
         "div": (operator.truediv, np.true_divide),
         "gt": (operator.gt, np.greater),
         "lt": (operator.lt, np.less),
+        "pow": (operator.pow, np.power),
         "max": (em.max, np.maximum),
         "min": (em.min, np.minimum),
     }
@@ -33,6 +34,7 @@ class TestTensorExhaustive:
         ("tanh", em.tanh, np.tanh),
         ("ctgh", em.ctgh, lambda x: 1.0 / np.tanh(x)),
         ("T", em.T, np.transpose),
+        ("sqrt", em.sqrt, np.sqrt),
     ]
 
     SHAPES = [(10,), (5, 5), (2, 5), (2, 3, 4)]
@@ -61,6 +63,10 @@ class TestTensorExhaustive:
         t_a, np_a = self._gen_tensor(shape)
         t_b, np_b = self._gen_tensor(shape)
 
+        if op_name == "pow":
+            np_a = np.abs(np_a) + 1e-3
+            t_a = Tensor.from_np(np_a)
+
         self._assert_eq(em_op(t_a, t_b), np_op(np_a, np_b))
 
     @pytest.mark.parametrize("op_name", BROADCAST_OPS)
@@ -85,6 +91,12 @@ class TestTensorExhaustive:
         if op_name == "div" and scalar == 0.0:
             pytest.skip("Skipping division by zero")
 
+        if op_name == "pow" and abs(scalar) > 5:
+            pytest.skip("Skipping big powers in exponentiation")
+
+        if op_name == "pow" and abs(scalar) < 1e-5:
+            pytest.skip("Skipping power of 0")
+
         em_op, np_op = self.OPS[op_name]
         t_a, np_a = self._gen_tensor((3, 3))
 
@@ -95,13 +107,18 @@ class TestTensorExhaustive:
             # tensor op scalar
             self._assert_eq(em_op(t_a, scalar), np_op(np_a, scalar))
 
-    @pytest.mark.parametrize("name, em_op, np_op", UNARY_OPS)
+    @pytest.mark.parametrize("op_name, em_op, np_op", UNARY_OPS)
     @pytest.mark.parametrize("shape", SHAPES)
-    def test_unary_op(self, name, em_op, np_op, shape):
-        if name == "T" and len(shape) != 2:
+    def test_unary_op(self, op_name, em_op, np_op, shape):
+        if op_name == "T" and len(shape) != 2:
             pytest.skip("Transpose requires 2D input")
 
         t_a, np_a = self._gen_tensor(shape)
+
+        if op_name == "sqrt":
+            np_a = np.abs(np_a) + 1e-3
+            t_a = Tensor.from_np(np_a)
+
         self._assert_eq(em_op(t_a), np_op(np_a))
 
     @pytest.mark.parametrize(

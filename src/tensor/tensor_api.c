@@ -355,6 +355,11 @@ TENSOR_SCALAR_OP_WRAPPER(_truediv_scalar, truediv_scalar)
 TENSOR_SCALAR_OP_WRAPPER(_rtruediv_scalar, rtruediv_scalar)
 TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_truediv_broadcasted, truediv_broadcasted)
 
+// power
+TENSOR_TENSOR_OP_WRAPPER(_pow_tensor, pow_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_pow_scalar, pow_scalar)
+TENSOR_SCALAR_OP_WRAPPER(_rpow_scalar, rpow_scalar)
+
 // comparison operations
 // max
 TENSOR_TENSOR_OP_WRAPPER(_max_tensor, max_tensor)
@@ -376,6 +381,7 @@ TENSOR_SCALAR_OP_WRAPPER(_lt_scalar, lt_scalar)
 // functions
 TENSOR_OP_WRAPPER(_negate, negate_tensor)
 TENSOR_OP_WRAPPER(_exponent, exponent_tensor)
+TENSOR_OP_WRAPPER(_sqrt, sqrt_tensor)
 
 // trigonometric
 TENSOR_OP_WRAPPER(_sin, sin_tensor)
@@ -488,18 +494,18 @@ static PyObject *_sum_axis(PyObject *module, PyObject *args)
     return (PyObject *)result;
 }
 
-// --- Method Tables ---
-// Methods attached to the _Tensor OBJECT (Instance methods)
+// instance methods for Tensor object
 static PyMethodDef _Tensor_instance_methods[] = {
     {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
     {"_to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Export data to list"},
     {"_to_np", (PyCFunction)_Tensor_to_np, METH_VARARGS, "Copy to np array"},
     {NULL}};
 
+// instance members for Tensor object
 static PyMemberDef _Tensor_members[] = {
     {"size", T_INT, offsetof(_Tensor, size), READONLY, "Size of the tensor"}, {NULL}};
 
-// Methods attached to the MODULE (Standalone functions)
+// module functions
 static PyMethodDef module_methods[] = {
     // arithmetic operations
     // add
@@ -520,6 +526,10 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_truediv_scalar),
     OP_METHOD(_rtruediv_scalar),
     OP_METHOD(_truediv_broadcasted),
+    // power
+    OP_METHOD(_pow_tensor),
+    OP_METHOD(_pow_scalar),
+    OP_METHOD(_rpow_scalar),
 
     // comparison operators
     // max
@@ -539,6 +549,7 @@ static PyMethodDef module_methods[] = {
     // arithmetic
     OP_METHOD(_negate),
     OP_METHOD(_exponent),
+    OP_METHOD(_sqrt),
     // trigonometric
     OP_METHOD(_sin),
     OP_METHOD(_cos),
@@ -562,6 +573,7 @@ static PyMethodDef module_methods[] = {
     // end
     {NULL}};
 
+// Tensor type
 static PyTypeObject _TensorType = {
     PyVarObject_HEAD_INIT(NULL, 0).tp_name = "ember._core._tensor._Tensor",
     .tp_basicsize = sizeof(_Tensor),
@@ -574,11 +586,13 @@ static PyTypeObject _TensorType = {
     .tp_dealloc = (destructor)_Tensor_dealloc,
 };
 
+// _tensor module
 static PyModuleDef tensor_module = {
     PyModuleDef_HEAD_INIT, .m_name = "ember._core._tensor", .m_doc = "Ember Tensor backend",
     .m_size = -1,          .m_methods = module_methods,
 };
 
+// initialize module
 PyMODINIT_FUNC PyInit__tensor(void)
 {
     if (PyType_Ready(&_TensorType) < 0) return NULL;

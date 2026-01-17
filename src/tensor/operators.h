@@ -21,6 +21,7 @@ BINARY_OP(max);
 BINARY_OP(min);
 BINARY_OP(gt);
 BINARY_OP(lt);
+BINARY_OP(pow);
 
 // scalar operations
 SCALAR_OP(add);
@@ -33,6 +34,8 @@ SCALAR_OP(max);
 SCALAR_OP(min);
 SCALAR_OP(gt);
 SCALAR_OP(lt);
+SCALAR_OP(pow);
+SCALAR_OP(rpow);
 
 // broadcast operations
 BROADCAST_OP(add);
@@ -40,9 +43,10 @@ BROADCAST_OP(sub);
 BROADCAST_OP(mul);
 BROADCAST_OP(truediv);
 
-// manual unary operations
+// unary operations
 UNARY_OP(negate);
 UNARY_OP(exponent);
+UNARY_OP(sqrt);
 
 UNARY_OP(sin);
 UNARY_OP(cos);
