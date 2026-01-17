@@ -51,6 +51,7 @@ BINARY_OP(truediv, a[i] / b[i])
 BINARY_OP(max, fmaxf(a[i], b[i]))
 BINARY_OP(min, fminf(a[i], b[i]))
 BINARY_OP(gt, (a[i] > b[i]) ? 1.0f : 0.0f)
+BINARY_OP(lt, (a[i] < b[i]) ? 1.0f : 0.0f)
 
 // scalar operator implementations
 SCALAR_OP(add, a[i] + b)
@@ -61,6 +62,7 @@ SCALAR_OP(rtruediv, b / a[i])
 SCALAR_OP(max, fmaxf(a[i], b))
 SCALAR_OP(min, fminf(a[i], b))
 SCALAR_OP(gt, (a[i] > b) ? 1.0f : 0.0f)
+SCALAR_OP(lt, (a[i] < b) ? 1.0f : 0.0f)
 
 // optimization
 void truediv_scalar(const float *a, const float b, float *out, int size)

@@ -20,6 +20,7 @@ BINARY_OP(truediv);
 BINARY_OP(max);
 BINARY_OP(min);
 BINARY_OP(gt);
+BINARY_OP(lt);
 
 // scalar operations
 SCALAR_OP(add);
@@ -31,6 +32,7 @@ SCALAR_OP(rtruediv);
 SCALAR_OP(max);
 SCALAR_OP(min);
 SCALAR_OP(gt);
+SCALAR_OP(lt);
 
 // broadcast operations
 BROADCAST_OP(add);

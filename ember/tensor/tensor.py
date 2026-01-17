@@ -23,6 +23,8 @@ from ember._core import (
     _from_numpy,
     _gt_scalar,
     _gt_tensor,
+    _lt_scalar,
+    _lt_tensor,
     _matmul,
     _max_scalar,
     _max_tensor,
@@ -133,6 +135,9 @@ class Tensor:
     def __gt__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, ">", _gt_tensor, _gt_scalar)
 
+    def __lt__(self, other: BinaryOpType) -> Tensor:
+        return _binary_op_wrapper(self, other, "<", _lt_tensor, _lt_scalar)
+
     def __matmul__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
             raise TypeError(
@@ -237,12 +242,32 @@ def _unary_op_wrapper(a: Tensor, op_symbol: str, tensor_op: TensorUnaryOp) -> Te
 
 
 # standalone binary methods
-def max(a: Tensor, b: BinaryOpType) -> Tensor:
-    return _binary_op_wrapper(a, b, "max()", _max_tensor, _max_scalar)
+TensorLike = BinaryOpType
 
 
-def min(a: Tensor, b: BinaryOpType) -> Tensor:
-    return _binary_op_wrapper(a, b, "min()", _min_tensor, _min_scalar)
+def _comutative_tensor_like_wrapper(
+    a: TensorLike,
+    b: TensorLike,
+    op_symbol: str,
+    tensor_op: TensorBinaryOp,
+    float_op: TensorScalarOp,
+):
+    if isinstance(a, Tensor):
+        return _binary_op_wrapper(a, b, op_symbol, tensor_op, float_op)
+    if isinstance(b, Tensor):
+        return _binary_op_wrapper(b, a, op_symbol, tensor_op, float_op)
+
+    raise TypeError(
+        f"ember.{op_symbol} needs one Tensor object. Got {type(a).__name__} and {type(b).__name__}"
+    )
+
+
+def max(a: TensorLike, b: TensorLike) -> Tensor:
+    return _comutative_tensor_like_wrapper(a, b, "max()", _max_tensor, _max_scalar)
+
+
+def min(a: TensorLike, b: TensorLike) -> Tensor:
+    return _comutative_tensor_like_wrapper(a, b, "min()", _min_tensor, _min_scalar)
 
 
 # standalone unary methods

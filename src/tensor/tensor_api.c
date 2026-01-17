@@ -368,6 +368,10 @@ TENSOR_SCALAR_OP_WRAPPER(_min_scalar, min_scalar)
 TENSOR_TENSOR_OP_WRAPPER(_gt_tensor, gt_tensor)
 TENSOR_SCALAR_OP_WRAPPER(_gt_scalar, gt_scalar)
 
+// less than
+TENSOR_TENSOR_OP_WRAPPER(_lt_tensor, lt_tensor)
+TENSOR_SCALAR_OP_WRAPPER(_lt_scalar, lt_scalar)
+
 // unary tensor operations
 // functions
 TENSOR_OP_WRAPPER(_negate, negate_tensor)
@@ -527,6 +531,9 @@ static PyMethodDef module_methods[] = {
     // greater than
     OP_METHOD(_gt_tensor),
     OP_METHOD(_gt_scalar),
+    // less than
+    OP_METHOD(_lt_tensor),
+    OP_METHOD(_lt_scalar),
 
     // unary operators
     // arithmetic
