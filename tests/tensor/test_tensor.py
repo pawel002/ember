@@ -15,6 +15,7 @@ class TestTensorExhaustive:
         "mul": (operator.mul, np.multiply),
         "div": (operator.truediv, np.true_divide),
         "gt": (operator.gt, np.greater),
+        "lt": (operator.lt, np.less),
         "max": (em.max, np.maximum),
         "min": (em.min, np.minimum),
     }
