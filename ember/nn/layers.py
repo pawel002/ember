@@ -55,3 +55,44 @@ class Linear(Layer):
         self.grad_b = em.sum(grad_y, axis=0)  # type: ignore
         grad_x = grad_y @ em.T(self.w)
         return grad_x
+
+
+class Dropout(Layer):
+    def __init__(self, p: float):
+        assert 0 <= p < 1, "p must be between 0 and 1 (exclusive of 1)"
+
+        self.x: Tensor | None
+        self.y: Tensor | None
+        self.mask: Tensor | None
+
+        self.p: float = p
+        self.scale: float = 1.0 / (1.0 - p)
+
+        self.reset()
+
+    def reset(self):
+        self.x = None
+        self.y = None
+        self.mask = None
+
+    def parameters(self) -> list[Tensor]:
+        return []
+
+    def gradients(self) -> list[Tensor | None]:
+        return []
+
+    def forward(self, x: Tensor, training: bool) -> Tensor:
+        self.x = x
+
+        if training:
+            self.mask = em.random.uniform(low=0, high=1.0, size=x.shape) > self.p
+            self.y = x * self.mask * self.scale
+            return self.y
+
+        self.y = x
+        return self.y
+
+    def backward(self, grad_y: Tensor) -> Tensor:
+        assert self.mask is not None, "self.mask needed for backward()"
+
+        return grad_y * self.mask * self.scale

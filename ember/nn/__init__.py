@@ -1,4 +1,4 @@
 from .activations import GELU, ReLU, Sigmoid, Tanh
-from .layers import Linear
+from .layers import Dropout, Linear
 
-__all__ = ["ReLU", "GELU", "Sigmoid", "Tanh", "Linear"]
+__all__ = ["ReLU", "GELU", "Sigmoid", "Tanh", "Linear", "Dropout"]
