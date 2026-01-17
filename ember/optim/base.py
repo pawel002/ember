@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from ember import Tensor
+from ember.tensor import Tensor
 
 
 class Optimizer(ABC):

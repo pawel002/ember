@@ -1,5 +1,5 @@
 # expose random module
-from . import nn, random
+from . import nn, optim, random
 from .tensor import (
     T,
     Tensor,
@@ -37,4 +37,5 @@ __all__ = [
     # modules
     "random",
     "nn",
+    "optim",
 ]
