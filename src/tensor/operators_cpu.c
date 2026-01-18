@@ -14,6 +14,12 @@
         for (int i = 0; i < size; i++) out[i] = EXPRESSION;                 \
     }
 
+#define INPLACE_OP(NAME, EXPRESSION)                        \
+    void NAME##_inplace(float *a, const float *b, int size) \
+    {                                                       \
+        for (int i = 0; i < size; i++) a[i] = EXPRESSION;   \
+    }
+
 #define UNARY_OP(NAME, EXPRESSION)                           \
     void NAME##_tensor(const float *a, float *out, int size) \
     {                                                        \
@@ -94,6 +100,9 @@ UNARY_OP(sinh, sinhf(a[i]))
 UNARY_OP(cosh, coshf(a[i]))
 UNARY_OP(tanh, tanhf(a[i]))
 UNARY_OP(ctgh, 1.0f / tanhf(a[i]))
+
+// inplace implementations
+INPLACE_OP(isub, a[i] - b[i])
 
 // cleanup macros
 #undef BINARY_OP

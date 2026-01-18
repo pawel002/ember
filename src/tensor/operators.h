@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #define BINARY_OP(NAME) void NAME##_tensor(const float *a, const float *b, float *out, int size)
+#define INPLACE_OP(NAME) void NAME##_inplace(float *a, const float *b, int size)
 #define SCALAR_OP(NAME) void NAME##_scalar(const float *a, const float b, float *out, int size)
 #define UNARY_OP(NAME) void NAME##_tensor(const float *a, float *out, int size)
 #define BROADCAST_OP(NAME)                                                                \
@@ -57,6 +58,9 @@ UNARY_OP(sinh);
 UNARY_OP(cosh);
 UNARY_OP(tanh);
 UNARY_OP(ctgh);
+
+// inplace operations
+INPLACE_OP(isub);
 
 // misc operations
 void matmul(const float *a, const float *b, float *out, int n, int m, int k);

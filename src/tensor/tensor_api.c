@@ -27,12 +27,19 @@
         return _impl_tensor_unary_op(module, args, FUNC);   \
     }
 
+#define TENSOR_INPLACE_OP_WRAPPER(NAME, FUNC)               \
+    static PyObject *NAME(PyObject *module, PyObject *args) \
+    {                                                       \
+        return _impl_tensor_inplace_op(module, args, FUNC); \
+    }
+
 #define TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(NAME, FUNC)              \
     static PyObject *NAME(PyObject *module, PyObject *args)           \
     {                                                                 \
         return impl_tensor_broadcasted_binary_op(module, args, FUNC); \
     }
 
+typedef void (*inplace_tensor_op_func)(float *, const float *, int);
 typedef void (*binary_tensor_op_func)(const float *, const float *, float *, int);
 typedef void (*binary_scalar_op_func)(const float *, const float, float *, int);
 typedef void (*unary_tensor_op_func)(const float *, float *, int);
@@ -231,6 +238,22 @@ static PyObject *impl_tensor_binary_op(PyObject *module, PyObject *args, binary_
     return (PyObject *)result;
 }
 
+static PyObject *impl_tensor_inplace_op(PyObject *module, PyObject *args, inplace_tensor_op_func op)
+{
+    _Tensor *a, *b;
+    if (!PyArg_ParseTuple(args, "O!O!", &_TensorType, &a, &_TensorType, &b)) {
+        return NULL;
+    }
+
+    if (a->size != b->size) {
+        PyErr_Format(PyExc_ValueError, "Size mismatch: %d vs %d", a->size, b->size);
+        return NULL;
+    }
+
+    op(a->d_ptr, b->d_ptr, a->size);
+    Py_RETURN_NONE;
+}
+
 static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_scalar_op_func op)
 {
     _Tensor *a;
@@ -343,6 +366,7 @@ TENSOR_TENSOR_OP_WRAPPER(_sub_tensor, sub_tensor)
 TENSOR_SCALAR_OP_WRAPPER(_sub_scalar, sub_scalar)
 TENSOR_SCALAR_OP_WRAPPER(_rsub_scalar, rsub_scalar)
 TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_sub_broadcasted, sub_broadcasted)
+TENSOR_INPLACE_OP_WRAPPER(_isub_inplace, isub_inplace);
 
 // multiply
 TENSOR_TENSOR_OP_WRAPPER(_mul_tensor, mul_tensor)
@@ -517,6 +541,7 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_sub_scalar),
     OP_METHOD(_rsub_scalar),
     OP_METHOD(_sub_broadcasted),
+    OP_METHOD(_isub_inplace),
     // multiply
     OP_METHOD(_mul_tensor),
     OP_METHOD(_mul_scalar),
