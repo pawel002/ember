@@ -27,6 +27,7 @@ from ember._core import (
     _lt_scalar,
     _lt_tensor,
     _matmul,
+    _matmul_batched,
     _max_axis,
     _max_scalar,
     _max_tensor,
@@ -165,24 +166,35 @@ class Tensor:
                 f"Unsupported operand type(s) for @: Tensor and '{type(other).__name__}'"
             )
 
-        if (dim_self := len(self.shape)) != 2:
-            raise ValueError(f"Matrix A has dim {dim_self}, expected is 2")
+        dim_self, dim_other = len(self.shape), len(other.shape)
+        if dim_self < 2 or dim_other < 2:
+            raise ValueError(
+                f"matmul requires at least 2D operands, got {self.shape} and {other.shape}"
+            )
 
-        if (dim_other := len(other.shape)) != 2:
-            raise ValueError(f"Matrix B has dim {dim_other}, expected is 2")
-
-        if self.shape[1] != other.shape[0]:
+        if self.shape[-1] != other.shape[-2]:
             raise ValueError(
                 f"Shape mismatch: {self.shape} cannot multiply {other.shape}"
             )
 
-        result_core = _matmul(
-            self._core, other._core, self.shape[0], other.shape[1], self.shape[1]
-        )
-        result_shape = (self.shape[0], other.shape[1])
-        result_dtype = self.dtype
+        n, k, m = self.shape[-2], self.shape[-1], other.shape[-1]
 
-        return Tensor._from_core(result_core, result_shape, result_dtype)
+        # 2D fast path.
+        if dim_self == 2 and dim_other == 2:
+            result_core = _matmul(self._core, other._core, n, m, k)
+            return Tensor._from_core(result_core, (n, m), self.dtype)
+
+        # Batched: leading (batch) dimensions must match exactly.
+        if self.shape[:-2] != other.shape[:-2]:
+            raise ValueError(
+                f"Batch dimensions must match for batched matmul: "
+                f"{self.shape} vs {other.shape}"
+            )
+
+        batch_dims = self.shape[:-2]
+        batch = math.prod(batch_dims)
+        result_core = _matmul_batched(self._core, other._core, batch, n, m, k)
+        return Tensor._from_core(result_core, (*batch_dims, n, m), self.dtype)
 
     def __neg__(self):
         return Tensor._from_core(_negate(self._core), self.shape, self.dtype)

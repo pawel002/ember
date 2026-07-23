@@ -19,6 +19,7 @@ extern "C" {
 
 /* Non-element-wise operators (hand-written per backend). */
 void matmul(const float *a, const float *b, float *out, int n, int m, int k);
+void matmul_batched(const float *a, const float *b, float *out, int batch, int n, int m, int k);
 void transpose(const float *a, float *out, int n, int m);
 float sum(const float *a, int size);
 int sum_axis_product(const int *shape, int start, int end);

@@ -327,6 +327,32 @@ static PyObject *_matmul(PyObject *module, PyObject *args)
     return (PyObject *)result;
 }
 
+static PyObject *_matmul_batched(PyObject *module, PyObject *args)
+{
+    _Tensor *a, *b;
+    int batch, n, m, k;
+
+    if (!PyArg_ParseTuple(args, "O!O!iiii", &_TensorType, &a, &_TensorType, &b, &batch, &n, &m, &k))
+        return NULL;
+
+    if (a->size != batch * n * k) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d x %d", a->size, batch, n,
+                     k);
+        return NULL;
+    }
+    if (b->size != batch * k * m) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch B: %d != %d x %d x %d", b->size, batch, k,
+                     m);
+        return NULL;
+    }
+
+    _Tensor *result = alloc_result(batch * n * m);
+    if (!result) return NULL;
+
+    matmul_batched(a->d_ptr, b->d_ptr, result->d_ptr, batch, n, m, k);
+    return (PyObject *)result;
+}
+
 static PyObject *_transpose(PyObject *module, PyObject *args)
 {
     _Tensor *a;
@@ -406,6 +432,7 @@ static PyMethodDef module_methods[] = {
 
     /* non-element-wise operators */
     OP_METHOD(_matmul),
+    OP_METHOD(_matmul_batched),
     OP_METHOD(_transpose),
     OP_METHOD(_from_numpy),
     OP_METHOD(_sum),

@@ -162,6 +162,25 @@ class TestTensorExhaustive:
         assert Tensor([1.0, 2.0, 3.0]).dtype == "float32"  # float list
         assert Tensor(np.arange(4, dtype=np.int64)).dtype == "float32"  # int ndarray
 
+    @pytest.mark.parametrize(
+        "shape_a, shape_b",
+        [
+            ((2, 3, 4), (2, 4, 5)),  # single batch dim
+            ((4, 2, 3), (4, 3, 6)),
+            ((2, 3, 5, 6), (2, 3, 6, 2)),  # two batch dims
+        ],
+    )
+    def test_matmul_batched(self, shape_a, shape_b):
+        t_a, np_a = self._gen_tensor(shape_a)
+        t_b, np_b = self._gen_tensor(shape_b)
+        self._assert_eq(t_a @ t_b, np_a @ np_b)
+
+    def test_matmul_batch_dim_mismatch_raises(self):
+        t_a, _ = self._gen_tensor((2, 3, 4))
+        t_b, _ = self._gen_tensor((3, 4, 5))  # batch 3 != 2
+        with pytest.raises(ValueError):
+            t_a @ t_b
+
     @pytest.mark.parametrize("shape", SHAPES)
     def test_sum(self, shape):
         t_a, np_a = self._gen_tensor(shape)

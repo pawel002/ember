@@ -123,6 +123,18 @@ void matmul(const float *a, const float *b, float *out, int n, int m, int k)
                                k, &beta, out, m));
 }
 
+void matmul_batched(const float *a, const float *b, float *out, int batch, int n, int m, int k)
+{
+    // Same column-major mapping as matmul(), applied to `batch` independent
+    // matrices with fixed strides between them.
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    CUBLAS_ERR_CHK(cublasSgemmStridedBatched(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                                             &alpha, b, m, (long long)k * m, a, k, (long long)n * k,
+                                             &beta, out, m, (long long)n * m, batch));
+}
+
 __global__ void k_transpose(const float *a, float *out, int n, int m)
 {
     int i = blockIdx.y * blockDim.y + threadIdx.y;

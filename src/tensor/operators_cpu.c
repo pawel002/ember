@@ -58,6 +58,13 @@ void matmul(const float *a, const float *b, float *out, int n, int m, int k)
     }
 }
 
+void matmul_batched(const float *a, const float *b, float *out, int batch, int n, int m, int k)
+{
+    for (int bi = 0; bi < batch; bi++) {
+        matmul(a + (size_t)bi * n * k, b + (size_t)bi * k * m, out + (size_t)bi * n * m, n, m, k);
+    }
+}
+
 void transpose(const float *a, float *out, int n, int m)
 {
     for (int i = 0; i < n; i++) {
