@@ -63,9 +63,8 @@ from .tensor_utils import (
     extract_data_info,
 )
 
-Types = Literal["int32", "float32"]
+Types = Literal["float32"]
 BinaryOpType = Union["Tensor", float, int]
-_Types_lookup: dict[type, Types] = {int: "int32", float: "float32"}
 
 
 class Tensor:
@@ -82,10 +81,12 @@ class Tensor:
             self._core = _from_numpy(data.astype(np.float32))
             return
 
-        shape, dtype_cls, flat_data = extract_data_info(data)
+        # The backend is float32-only; integer inputs are accepted but stored
+        # (and reported) as float32 so `dtype` never misrepresents the data.
+        shape, _dtype_cls, flat_data = extract_data_info(data)
         self.shape = shape
         self.strides = calculate_contiguous_strides(self.shape)
-        self.dtype = _Types_lookup.get(dtype_cls, "float32")
+        self.dtype = "float32"
         self._core = _Tensor(math.prod(shape))
         self._core._copy_from_list(flat_data)
 

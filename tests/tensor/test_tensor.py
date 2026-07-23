@@ -155,6 +155,12 @@ class TestTensorExhaustive:
         assert t.shape == (2, 2)
         assert t.to_list() == [[1.0, 2.0], [3.0, 4.0]]
 
+    def test_dtype_is_always_float32(self):
+        # Backend is float32-only; dtype must reflect what is actually stored.
+        assert Tensor([1, 2, 3]).dtype == "float32"  # int list
+        assert Tensor([1.0, 2.0, 3.0]).dtype == "float32"  # float list
+        assert Tensor(np.arange(4, dtype=np.int64)).dtype == "float32"  # int ndarray
+
     @pytest.mark.parametrize("shape", SHAPES)
     def test_sum(self, shape):
         t_a, np_a = self._gen_tensor(shape)
