@@ -81,6 +81,7 @@ Ember ships small `nn` and `optim` modules with explicit (manual) gradients.
 import numpy as np
 
 import ember as em
+import ember.loss as loss
 import ember.nn as nn
 import ember.optim as optim
 from ember import Tensor
@@ -93,15 +94,16 @@ model = nn.Sequential(
     nn.Linear(8, 1),
 )
 opt = optim.Adam(model.parameters(), lr=1e-2)
+criterion = loss.MSELoss()
 
 x = Tensor(np.random.randn(16, 4).astype(np.float32))
 target = Tensor(np.random.randn(16, 1).astype(np.float32))
 
-# forward
+# forward + loss
 pred = model(x, training=True)
+value = criterion(pred, target)
 
-# backward (mean-squared-error gradient), then an optimizer step
-grad = (pred - target) * (2.0 / pred.shape[0])
-model.backward(grad)
+# backward, then an optimizer step
+model.backward(criterion.backward())
 opt.apply(model.gradients())
 ```

@@ -100,6 +100,7 @@ $$b_i = f(a_i)$$
 | Function | Description | Equation |
 | :--- | :--- | :--- |
 | `ember.exp(x)` | Exponential | $b_i = e^{a_i}$ |
+| `ember.log(x)` | Natural logarithm | $b_i = \ln(a_i)$ |
 | `ember.sqrt(x)` | Square root | $b_i = \sqrt{a_i}$ |
 
 ### Reductions & Shape
@@ -107,8 +108,13 @@ $$b_i = f(a_i)$$
 | Function | Description |
 | :--- | :--- |
 | `ember.sum(x)` | Sum of all elements (returns a `float`). |
-| `ember.sum(x, axis=k)` | Sum along `axis` `k`, returning a `Tensor`. |
+| `ember.sum(x, axis=k, keepdims=False)` | Sum along `axis` `k`, returning a `Tensor`. |
+| `ember.amax(x, axis=k, keepdims=False)` | Maximum along `axis` `k` (reduction; distinct from the element-wise `ember.max`). |
+| `ember.softmax(x, axis=-1)` | Numerically-stable softmax along `axis`. |
 | `ember.T(x)` | Transpose of a 2-D tensor. |
+
+Matrix multiplication (`@`) supports 2-D operands and batched N-D operands
+whose leading (batch) dimensions match, e.g. `(B, n, k) @ (B, k, m) -> (B, n, m)`.
 
 ### Binary Elementwise Operations
 
@@ -244,6 +250,10 @@ optimizers implement `ember.optim.base.Optimizer`:
 - `__init__(parameters, ...)`
 - `apply(gradients: list[Tensor]) -> None`
 
+#### `ember.optim.SGD(parameters, lr=0.01, momentum=0.0)`
+Stochastic gradient descent with optional (Polyak) momentum: `v = momentum*v + g`,
+then `p -= lr*v`. With `momentum=0` this is plain gradient descent.
+
 #### `ember.optim.Adam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-8)`
 Adam optimizer.
 
@@ -253,10 +263,38 @@ Adam optimizer.
   - `betas` (tuple[float, float]): Coefficients for the running averages of the gradient and its square.
   - `eps` (float): Term added to the denominator for numerical stability.
 
+#### `ember.optim.AdamW(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)`
+Adam with decoupled weight decay (`p *= 1 - lr*weight_decay` applied directly to
+the parameters rather than folded into the gradient).
+
 ```python
 import ember.optim as optim
 
 opt = optim.Adam(model.parameters(), lr=1e-3)
 # ... after a forward/backward pass ...
 opt.apply(model.gradients())
+```
+
+---
+
+## Losses (`ember.loss`)
+
+Losses implement `ember.loss.base.Loss`: `forward(pred, target) -> float`
+(also callable) caches state, and `backward() -> Tensor` returns the gradient
+of the loss with respect to `pred`.
+
+#### `ember.loss.MSELoss()`
+Mean squared error over all elements: `mean((pred - target) ** 2)`.
+
+#### `ember.loss.CrossEntropyLoss()`
+Softmax cross-entropy for classification, averaged over the batch. Expects
+`pred` to be raw logits of shape `(batch, classes)` and `target` to be one-hot
+probabilities of the same shape. Uses the log-sum-exp trick for stability.
+
+```python
+import ember.loss as loss
+
+criterion = loss.CrossEntropyLoss()
+value = criterion(logits, one_hot_targets)  # scalar float
+grad = criterion.backward()                 # Tensor, dL/dlogits
 ```
