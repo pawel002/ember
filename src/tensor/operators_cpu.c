@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stddef.h>  // size_t
 
 #include "operators.h"
 
