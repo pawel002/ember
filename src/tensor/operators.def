@@ -70,6 +70,7 @@ EMBER_BROADCAST_OP(truediv, a[ia] / b[ib])
 /* ---- unary ---- */
 EMBER_UNARY_OP(negate, -a[i])
 EMBER_UNARY_OP(exponent, expf(a[i]))
+EMBER_UNARY_OP(log, logf(a[i]))
 EMBER_UNARY_OP(sqrt, sqrtf(a[i]))
 EMBER_UNARY_OP(sin, sinf(a[i]))
 EMBER_UNARY_OP(cos, cosf(a[i]))

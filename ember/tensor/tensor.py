@@ -23,6 +23,7 @@ from ember._core import (
     _from_numpy,
     _gt_scalar,
     _gt_tensor,
+    _log,
     _lt_scalar,
     _lt_tensor,
     _matmul,
@@ -319,6 +320,10 @@ def exp(a: Tensor) -> Tensor:
 
 def sqrt(a: Tensor) -> Tensor:
     return _unary_op_wrapper(a, "sqrt()", _sqrt)
+
+
+def log(a: Tensor) -> Tensor:
+    return _unary_op_wrapper(a, "log()", _log)
 
 
 # trig

@@ -35,6 +35,7 @@ class TestTensorExhaustive:
         ("ctgh", em.ctgh, lambda x: 1.0 / np.tanh(x)),
         ("T", em.T, np.transpose),
         ("sqrt", em.sqrt, np.sqrt),
+        ("log", em.log, np.log),
     ]
 
     SHAPES = [(10,), (5, 5), (2, 5), (2, 3, 4)]
@@ -115,7 +116,7 @@ class TestTensorExhaustive:
 
         t_a, np_a = self._gen_tensor(shape)
 
-        if op_name == "sqrt":
+        if op_name in ("sqrt", "log"):
             np_a = np.abs(np_a) + 1e-3
             t_a = Tensor.from_np(np_a)
 
