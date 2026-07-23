@@ -1,0 +1,86 @@
+/* operators.def -- single source of truth for element-wise tensor operators.
+ *
+ * Every element-wise operator in Ember is declared exactly once, here. The
+ * lines below are expanded through caller-defined X-macros to generate, from
+ * this one file:
+ *
+ *   - the C declarations                 (operators.h)
+ *   - the CPU implementations            (operators_cpu.c)
+ *   - the CUDA kernels + host wrappers   (operators_gpu.cu)
+ *   - the Python method wrappers + table (tensor_api.c)
+ *
+ * To add a new element-wise operator, add ONE line here (plus its Python-facing
+ * method in ember/tensor/tensor.py and its stub in ember/_core/_tensor.pyi).
+ *
+ * Define any subset of the four macros before including this file; the ones you
+ * do not define expand to nothing. Expressions must be valid in both C and CUDA
+ * (fmaxf/powf/expf/... exist in both), so a single expression drives both
+ * backends.
+ *
+ *   EMBER_BINARY_OP(name, expr)     expr over a[i],  b[i]    ->  name##_tensor
+ *   EMBER_SCALAR_OP(name, expr)     expr over a[i],  b       ->  name##_scalar
+ *   EMBER_BROADCAST_OP(name, expr)  expr over a[ia], b[ib]   ->  name##_broadcasted
+ *   EMBER_UNARY_OP(name, expr)      expr over a[i]           ->  name##_tensor
+ */
+
+#ifndef EMBER_BINARY_OP
+#define EMBER_BINARY_OP(name, expr)
+#endif
+#ifndef EMBER_SCALAR_OP
+#define EMBER_SCALAR_OP(name, expr)
+#endif
+#ifndef EMBER_BROADCAST_OP
+#define EMBER_BROADCAST_OP(name, expr)
+#endif
+#ifndef EMBER_UNARY_OP
+#define EMBER_UNARY_OP(name, expr)
+#endif
+
+/* ---- tensor <op> tensor ---- */
+EMBER_BINARY_OP(add, a[i] + b[i])
+EMBER_BINARY_OP(sub, a[i] - b[i])
+EMBER_BINARY_OP(mul, a[i] * b[i])
+EMBER_BINARY_OP(truediv, a[i] / b[i])
+EMBER_BINARY_OP(max, fmaxf(a[i], b[i]))
+EMBER_BINARY_OP(min, fminf(a[i], b[i]))
+EMBER_BINARY_OP(gt, (a[i] > b[i]) ? 1.0f : 0.0f)
+EMBER_BINARY_OP(lt, (a[i] < b[i]) ? 1.0f : 0.0f)
+EMBER_BINARY_OP(pow, powf(a[i], b[i]))
+
+/* ---- tensor <op> scalar ---- */
+EMBER_SCALAR_OP(add, a[i] + b)
+EMBER_SCALAR_OP(sub, a[i] - b)
+EMBER_SCALAR_OP(rsub, b - a[i])
+EMBER_SCALAR_OP(mul, a[i] * b)
+EMBER_SCALAR_OP(truediv, a[i] / b)
+EMBER_SCALAR_OP(rtruediv, b / a[i])
+EMBER_SCALAR_OP(max, fmaxf(a[i], b))
+EMBER_SCALAR_OP(min, fminf(a[i], b))
+EMBER_SCALAR_OP(gt, (a[i] > b) ? 1.0f : 0.0f)
+EMBER_SCALAR_OP(lt, (a[i] < b) ? 1.0f : 0.0f)
+EMBER_SCALAR_OP(pow, powf(a[i], b))
+EMBER_SCALAR_OP(rpow, powf(b, a[i]))
+
+/* ---- broadcasted tensor <op> tensor ---- */
+EMBER_BROADCAST_OP(add, a[ia] + b[ib])
+EMBER_BROADCAST_OP(sub, a[ia] - b[ib])
+EMBER_BROADCAST_OP(mul, a[ia] * b[ib])
+EMBER_BROADCAST_OP(truediv, a[ia] / b[ib])
+
+/* ---- unary ---- */
+EMBER_UNARY_OP(negate, -a[i])
+EMBER_UNARY_OP(exponent, expf(a[i]))
+EMBER_UNARY_OP(sqrt, sqrtf(a[i]))
+EMBER_UNARY_OP(sin, sinf(a[i]))
+EMBER_UNARY_OP(cos, cosf(a[i]))
+EMBER_UNARY_OP(tan, tanf(a[i]))
+EMBER_UNARY_OP(ctg, 1.0f / tanf(a[i]))
+EMBER_UNARY_OP(sinh, sinhf(a[i]))
+EMBER_UNARY_OP(cosh, coshf(a[i]))
+EMBER_UNARY_OP(tanh, tanhf(a[i]))
+EMBER_UNARY_OP(ctgh, 1.0f / tanhf(a[i]))
+
+#undef EMBER_BINARY_OP
+#undef EMBER_SCALAR_OP
+#undef EMBER_BROADCAST_OP
+#undef EMBER_UNARY_OP

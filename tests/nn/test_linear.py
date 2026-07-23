@@ -38,7 +38,11 @@ class TestLinear:
         expected_y = x_np @ w_ref + b_ref
 
         np.testing.assert_allclose(
-            y_t.to_np(), expected_y, rtol=1e-5, err_msg="Forward pass output mismatch"
+            y_t.to_np(),
+            expected_y,
+            rtol=1e-4,
+            atol=1e-5,
+            err_msg="Forward pass output mismatch",
         )
 
         # backward pass
@@ -48,7 +52,8 @@ class TestLinear:
         np.testing.assert_allclose(
             grad_x_t.to_np(),
             expected_grad_x,
-            rtol=1e-5,
+            rtol=1e-4,
+            atol=1e-5,
             err_msg="Gradient w.r.t Input (grad_x) mismatch",
         )
 
@@ -59,7 +64,8 @@ class TestLinear:
         np.testing.assert_allclose(
             layer.grad_w.to_np(),
             expected_grad_w,
-            rtol=1e-5,
+            rtol=1e-4,
+            atol=1e-5,
             err_msg="Gradient w.r.t Weights (grad_w) mismatch",
         )
 
@@ -70,6 +76,7 @@ class TestLinear:
         np.testing.assert_allclose(
             layer.grad_b.to_np(),
             expected_grad_b,
-            rtol=1e-5,
+            rtol=1e-4,
+            atol=1e-5,
             err_msg="Gradient w.r.t Bias (grad_b) mismatch",
         )

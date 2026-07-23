@@ -19,7 +19,6 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=2.3.5",
-    "pre-commit>=4.5.1",
 ]
 urls.Repository = "https://github.com/pawel002/ember"
 urls.Issues = "https://github.com/pawel002/ember/issues"
@@ -27,7 +26,7 @@ urls.Issues = "https://github.com/pawel002/ember/issues"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "numpy"
+    "pre-commit>=4.5.1",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -37,11 +36,15 @@ docs = [
 
 [tool.scikit-build]
 wheel.packages = ["ember"]
-cmake.verbose = true
+build.verbose = true
 logging.level = "INFO"
 
 [tool.ruff]
-target-version = "py314"
+# Target the minimum supported Python so lint/UP fixes stay 3.11-compatible.
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

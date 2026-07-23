@@ -49,3 +49,12 @@ class TestRandomGeneration:
     def test_negative_dimensions_raise_error(self):
         with pytest.raises(ValueError):
             em.random.uniform(1.0, 0.0, (10, -5))
+
+    def test_seed_is_reproducible(self):
+        em.random.seed(1234)
+        a = em.random.uniform(0.0, 1.0, (50,)).to_np()
+
+        em.random.seed(1234)
+        b = em.random.uniform(0.0, 1.0, (50,)).to_np()
+
+        np.testing.assert_array_equal(a, b)

@@ -27,12 +27,16 @@ source .venv/bin/activate
 uv pip install -e .
 ```
 
+> The CUDA backend is compiled automatically when a CUDA toolkit is detected;
+> otherwise Ember falls back to the pure-C CPU backend. The rest of the library
+> is identical either way.
+
 ## Quick Start
 
 ```python
 from ember import Tensor
 
-# Create tensors
+# Create tensors (from lists or NumPy arrays)
 a = Tensor([1.0, 2.0, 3.0])
 b = Tensor([4.0, 5.0, 6.0])
 
@@ -41,6 +45,28 @@ c = a * b
 print(c.to_list()) # Output: [4.0, 10.0, 18.0]
 print(c.to_np())   # Output: np.array([4.0, 10.0, 18.0])
 ```
+
+Ember also ships small `nn` and `optim` modules:
+
+```python
+import ember as em
+import ember.nn as nn
+import ember.optim as optim
+
+model = nn.Sequential(nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 1))
+opt = optim.Adam(model.parameters(), lr=1e-2)
+
+y = model(x, training=True)   # x is a Tensor of shape (batch, 4)
+model.backward(grad)          # your loss gradient w.r.t. y
+opt.apply(model.gradients())
+```
+
+## Extending Ember
+
+Adding a new element-wise operator is a one-line change to a single source of
+truth (`src/tensor/operators.def`), which generates the C declaration, the CPU
+kernel, the CUDA kernel, and the Python binding. See the
+[Extending Ember](https://pawel002.github.io/ember/extending/) guide.
 
 ## Documentation
 

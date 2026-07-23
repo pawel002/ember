@@ -1,3 +1,3 @@
-from .generators import constant, ones, uniform, zeros
+from .generators import constant, ones, seed, uniform, zeros
 
-__all__ = ["uniform", "zeros", "constant", "ones"]
+__all__ = ["seed", "uniform", "zeros", "constant", "ones"]

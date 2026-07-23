@@ -144,6 +144,18 @@ class TestTensorExhaustive:
             self._assert_eq(t_a @ t_b, np_a @ np_b)
 
     @pytest.mark.parametrize("shape", SHAPES)
+    def test_construct_from_numpy(self, shape):
+        np_a = np.random.randn(*shape).astype(np.float32)
+        t = Tensor(np_a)
+        assert t.shape == shape
+        np.testing.assert_allclose(t.to_np(), np_a, rtol=1e-6)
+
+    def test_construct_from_list(self):
+        t = Tensor([[1.0, 2.0], [3.0, 4.0]])
+        assert t.shape == (2, 2)
+        assert t.to_list() == [[1.0, 2.0], [3.0, 4.0]]
+
+    @pytest.mark.parametrize("shape", SHAPES)
     def test_sum(self, shape):
         t_a, np_a = self._gen_tensor(shape)
 

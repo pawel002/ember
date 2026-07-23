@@ -1,4 +1,4 @@
-from ._em_random import _constant, _uniform
+from ._em_random import _constant, _seed, _uniform
 from ._tensor import (
     _add_broadcasted,
     _add_scalar,
@@ -104,4 +104,5 @@ __all__ = [
     # distributions
     "_uniform",
     "_constant",
+    "_seed",
 ]

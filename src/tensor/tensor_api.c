@@ -7,48 +7,34 @@
 #include "operators.h"
 #include "tensor_helpers.h"
 
-#define OP_METHOD(NAME) {#NAME, (PyCFunction)NAME, METH_VARARGS, "Element-wise " #NAME " operation"}
+#define OP_METHOD(NAME) \
+    {#NAME, (PyCFunction)NAME, METH_VARARGS, "Element-wise " #NAME " operation"}
 
-#define TENSOR_TENSOR_OP_WRAPPER(NAME, FUNC)                \
-    static PyObject *NAME(PyObject *module, PyObject *args) \
-    {                                                       \
-        return impl_tensor_binary_op(module, args, FUNC);   \
-    }
-
-#define TENSOR_SCALAR_OP_WRAPPER(NAME, FUNC)                \
-    static PyObject *NAME(PyObject *module, PyObject *args) \
-    {                                                       \
-        return impl_float_binary_op(module, args, FUNC);    \
-    }
-
-#define TENSOR_OP_WRAPPER(NAME, FUNC)                       \
-    static PyObject *NAME(PyObject *module, PyObject *args) \
-    {                                                       \
-        return _impl_tensor_unary_op(module, args, FUNC);   \
-    }
-
-#define TENSOR_INPLACE_OP_WRAPPER(NAME, FUNC)               \
-    static PyObject *NAME(PyObject *module, PyObject *args) \
-    {                                                       \
-        return _impl_tensor_inplace_op(module, args, FUNC); \
-    }
-
-#define TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(NAME, FUNC)              \
-    static PyObject *NAME(PyObject *module, PyObject *args)           \
-    {                                                                 \
-        return impl_tensor_broadcasted_binary_op(module, args, FUNC); \
-    }
-
-typedef void (*inplace_tensor_op_func)(float *, const float *, int);
 typedef void (*binary_tensor_op_func)(const float *, const float *, float *, int);
-typedef void (*binary_scalar_op_func)(const float *, const float, float *, int);
+typedef void (*binary_scalar_op_func)(const float *, float, float *, int);
 typedef void (*unary_tensor_op_func)(const float *, float *, int);
 typedef void (*binary_tensor_broadcasted_op_func)(const float *, const float *, float *,
                                                   const int *, const int *, const int *, int);
 
 static PyTypeObject _TensorType;
 
-// dealloc, inits, copy
+/* ---- allocation helper: a result _Tensor with `size` device floats ---- */
+static _Tensor *alloc_result(int size)
+{
+    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    if (!result) return NULL;
+
+    result->size = size;
+    result->d_ptr = alloc_memory((size_t)size * sizeof(float));
+    if (!result->d_ptr) {
+        Py_DECREF(result);
+        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
+        return NULL;
+    }
+    return result;
+}
+
+/* ---- dunder methods ---- */
 static void _Tensor_dealloc(_Tensor *self)
 {
     if (self->d_ptr) free_memory(self->d_ptr);
@@ -63,7 +49,7 @@ static int _Tensor_init(_Tensor *self, PyObject *args, PyObject *kwds)
     }
 
     self->size = size;
-    self->d_ptr = alloc_memory(size * sizeof(float));
+    self->d_ptr = alloc_memory((size_t)size * sizeof(float));
 
     if (self->d_ptr == NULL) {
         PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
@@ -77,14 +63,15 @@ static PyObject *_Tensor_copy_from_list(_Tensor *self, PyObject *args)
     PyObject *py_list;
     if (!PyArg_ParseTuple(args, "O!", &PyList_Type, &py_list)) return NULL;
 
-    float *temp_host = (float *)malloc(self->size * sizeof(float));
+    float *temp_host = (float *)malloc((size_t)self->size * sizeof(float));
+    if (!temp_host) return PyErr_NoMemory();
 
     for (int i = 0; i < self->size; i++) {
         PyObject *item = PyList_GetItem(py_list, i);
         temp_host[i] = (float)PyFloat_AsDouble(item);
     }
 
-    copy_to_device(self->d_ptr, temp_host, self->size * sizeof(float));
+    copy_to_device(self->d_ptr, temp_host, (size_t)self->size * sizeof(float));
     free(temp_host);
 
     Py_RETURN_NONE;
@@ -124,14 +111,14 @@ static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
         return NULL;
     }
 
-    float *temp_host = (float *)malloc(self->size * sizeof(float));
+    float *temp_host = (float *)malloc((size_t)self->size * sizeof(float));
     if (!temp_host) {
         free(c_dims);
         return PyErr_NoMemory();
     }
 
     sync_device();  // make sure the device is synchronized
-    copy_from_device(temp_host, self->d_ptr, self->size * sizeof(float));
+    copy_from_device(temp_host, self->d_ptr, (size_t)self->size * sizeof(float));
 
     int offset = 0;
     PyObject *result = build_nested_list(temp_host, c_dims, (int)ndim, 0, &offset);
@@ -148,9 +135,7 @@ static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
     npy_intp dims[1];
     dims[0] = self->size;
 
-    int type_num = NPY_FLOAT;
-    PyObject *arr = PyArray_SimpleNew(1, dims, type_num);
-
+    PyObject *arr = PyArray_SimpleNew(1, dims, NPY_FLOAT);
     if (arr == NULL) {
         return NULL;
     }
@@ -187,29 +172,20 @@ static PyObject *_from_numpy(PyObject *module, PyObject *args)
         return NULL;
     }
 
-    int num_elements = view.len / view.itemsize;
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    int num_elements = (int)(view.len / view.itemsize);
+    _Tensor *result = alloc_result(num_elements);
     if (!result) {
         PyBuffer_Release(&view);
         return NULL;
     }
 
-    result->size = (int)num_elements;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        PyBuffer_Release(&view);
-        return PyErr_NoMemory();
-    }
-
-    copy_to_device(result->d_ptr, view.buf, result->size * sizeof(float));
+    copy_to_device(result->d_ptr, view.buf, (size_t)result->size * sizeof(float));
     PyBuffer_Release(&view);
 
     return (PyObject *)result;
 }
 
-// operator wrappers
+/* ---- generic operator dispatchers ---- */
 static PyObject *impl_tensor_binary_op(PyObject *module, PyObject *args, binary_tensor_op_func op)
 {
     _Tensor *a, *b;
@@ -222,36 +198,11 @@ static PyObject *impl_tensor_binary_op(PyObject *module, PyObject *args, binary_
         return NULL;
     }
 
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    _Tensor *result = alloc_result(a->size);
     if (!result) return NULL;
-
-    result->size = a->size;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
-        return NULL;
-    }
 
     op(a->d_ptr, b->d_ptr, result->d_ptr, a->size);
     return (PyObject *)result;
-}
-
-static PyObject *impl_tensor_inplace_op(PyObject *module, PyObject *args, inplace_tensor_op_func op)
-{
-    _Tensor *a, *b;
-    if (!PyArg_ParseTuple(args, "O!O!", &_TensorType, &a, &_TensorType, &b)) {
-        return NULL;
-    }
-
-    if (a->size != b->size) {
-        PyErr_Format(PyExc_ValueError, "Size mismatch: %d vs %d", a->size, b->size);
-        return NULL;
-    }
-
-    op(a->d_ptr, b->d_ptr, a->size);
-    Py_RETURN_NONE;
 }
 
 static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_scalar_op_func op)
@@ -263,17 +214,8 @@ static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_s
         return NULL;
     }
 
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    _Tensor *result = alloc_result(a->size);
     if (!result) return NULL;
-
-    result->size = a->size;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
-        return NULL;
-    }
 
     op(a->d_ptr, b, result->d_ptr, a->size);
     return (PyObject *)result;
@@ -291,8 +233,8 @@ static PyObject *impl_tensor_broadcasted_binary_op(PyObject *module, PyObject *a
         return NULL;
     }
 
-    int ndim_chk1, ndim_chk2;
-    int *c_shape, *c_strides_a, *c_strides_b, ndim = 0;
+    int *c_shape = NULL, *c_strides_a = NULL, *c_strides_b = NULL;
+    int ndim = 0, ndim_chk1 = 0, ndim_chk2 = 0;
     if (tuple_to_array(shape_tuple, &c_shape, &ndim) < 0) goto cleanup;
     if (tuple_to_array(strides_a_tuple, &c_strides_a, &ndim_chk1) < 0) goto cleanup;
     if (tuple_to_array(strides_b_tuple, &c_strides_b, &ndim_chk2) < 0) goto cleanup;
@@ -307,119 +249,59 @@ static PyObject *impl_tensor_broadcasted_binary_op(PyObject *module, PyObject *a
         total_elements *= c_shape[i];
     }
 
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    _Tensor *result = alloc_result(total_elements);
     if (!result) goto cleanup;
-
-    result->size = total_elements;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
-        goto cleanup;
-    }
 
     op(a->d_ptr, b->d_ptr, result->d_ptr, c_shape, c_strides_a, c_strides_b, ndim);
 
     free(c_shape);
     free(c_strides_a);
     free(c_strides_b);
-
     return (PyObject *)result;
 
 cleanup:
-    if (c_shape) free(c_shape);
-    if (c_strides_a) free(c_strides_a);
-    if (c_strides_b) free(c_strides_b);
+    free(c_shape);
+    free(c_strides_a);
+    free(c_strides_b);
     return NULL;
 }
 
-// unary operators
-static PyObject *_impl_tensor_unary_op(PyObject *module, PyObject *args, unary_tensor_op_func op)
+static PyObject *impl_tensor_unary_op(PyObject *module, PyObject *args, unary_tensor_op_func op)
 {
     _Tensor *a;
     if (!PyArg_ParseTuple(args, "O!", &_TensorType, &a)) return NULL;
 
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    _Tensor *result = alloc_result(a->size);
     if (!result) return NULL;
-
-    result->size = a->size;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        return PyErr_NoMemory();
-    }
 
     op(a->d_ptr, result->d_ptr, a->size);
     return (PyObject *)result;
 }
 
-// arithmetic operations
-// add
-TENSOR_TENSOR_OP_WRAPPER(_add_tensor, add_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_add_scalar, add_scalar)
-TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_add_broadcasted, add_broadcasted)
+/* ---- Python wrappers, generated from operators.def ---- */
+#define EMBER_BINARY_OP(name, expr)                                 \
+    static PyObject *_##name##_tensor(PyObject *m, PyObject *args)   \
+    {                                                               \
+        return impl_tensor_binary_op(m, args, name##_tensor);       \
+    }
+#define EMBER_SCALAR_OP(name, expr)                                 \
+    static PyObject *_##name##_scalar(PyObject *m, PyObject *args)   \
+    {                                                               \
+        return impl_float_binary_op(m, args, name##_scalar);        \
+    }
+#define EMBER_BROADCAST_OP(name, expr)                                    \
+    static PyObject *_##name##_broadcasted(PyObject *m, PyObject *args)    \
+    {                                                                     \
+        return impl_tensor_broadcasted_binary_op(m, args, name##_broadcasted); \
+    }
+#define EMBER_UNARY_OP(name, expr)                        \
+    static PyObject *_##name(PyObject *m, PyObject *args)  \
+    {                                                     \
+        return impl_tensor_unary_op(m, args, name##_tensor); \
+    }
+#include "operators.def"
 
-// subtract
-TENSOR_TENSOR_OP_WRAPPER(_sub_tensor, sub_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_sub_scalar, sub_scalar)
-TENSOR_SCALAR_OP_WRAPPER(_rsub_scalar, rsub_scalar)
-TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_sub_broadcasted, sub_broadcasted)
-TENSOR_INPLACE_OP_WRAPPER(_isub_inplace, isub_inplace);
-
-// multiply
-TENSOR_TENSOR_OP_WRAPPER(_mul_tensor, mul_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_mul_scalar, mul_scalar)
-TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_mul_broadcasted, mul_broadcasted)
-
-// true division
-TENSOR_TENSOR_OP_WRAPPER(_truediv_tensor, truediv_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_truediv_scalar, truediv_scalar)
-TENSOR_SCALAR_OP_WRAPPER(_rtruediv_scalar, rtruediv_scalar)
-TENSOR_TENSOR_BROADCASTED_OP_WRAPPER(_truediv_broadcasted, truediv_broadcasted)
-
-// power
-TENSOR_TENSOR_OP_WRAPPER(_pow_tensor, pow_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_pow_scalar, pow_scalar)
-TENSOR_SCALAR_OP_WRAPPER(_rpow_scalar, rpow_scalar)
-
-// comparison operations
-// max
-TENSOR_TENSOR_OP_WRAPPER(_max_tensor, max_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_max_scalar, max_scalar)
-
-// min
-TENSOR_TENSOR_OP_WRAPPER(_min_tensor, min_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_min_scalar, min_scalar)
-
-// greater than
-TENSOR_TENSOR_OP_WRAPPER(_gt_tensor, gt_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_gt_scalar, gt_scalar)
-
-// less than
-TENSOR_TENSOR_OP_WRAPPER(_lt_tensor, lt_tensor)
-TENSOR_SCALAR_OP_WRAPPER(_lt_scalar, lt_scalar)
-
-// unary tensor operations
-// functions
-TENSOR_OP_WRAPPER(_negate, negate_tensor)
-TENSOR_OP_WRAPPER(_exponent, exponent_tensor)
-TENSOR_OP_WRAPPER(_sqrt, sqrt_tensor)
-
-// trigonometric
-TENSOR_OP_WRAPPER(_sin, sin_tensor)
-TENSOR_OP_WRAPPER(_cos, cos_tensor)
-TENSOR_OP_WRAPPER(_tan, tan_tensor)
-TENSOR_OP_WRAPPER(_ctg, ctg_tensor)
-
-// trigonometric hyperbolic
-TENSOR_OP_WRAPPER(_sinh, sinh_tensor)
-TENSOR_OP_WRAPPER(_cosh, cosh_tensor)
-TENSOR_OP_WRAPPER(_tanh, tanh_tensor)
-TENSOR_OP_WRAPPER(_ctgh, ctgh_tensor)
-
-// misc operators
+/* ---- non-element-wise operators ---- */
 static PyObject *_matmul(PyObject *module, PyObject *args)
 {
     _Tensor *a, *b;
@@ -438,19 +320,10 @@ static PyObject *_matmul(PyObject *module, PyObject *args)
         return NULL;
     }
 
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    _Tensor *result = alloc_result(n * m);
     if (!result) return NULL;
 
-    result->size = n * m;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        return PyErr_NoMemory();
-    }
-
     matmul(a->d_ptr, b->d_ptr, result->d_ptr, n, m, k);
-
     return (PyObject *)result;
 }
 
@@ -460,16 +333,8 @@ static PyObject *_transpose(PyObject *module, PyObject *args)
     int n, m;
     if (!PyArg_ParseTuple(args, "O!ii", &_TensorType, &a, &n, &m)) return NULL;
 
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    _Tensor *result = alloc_result(a->size);
     if (!result) return NULL;
-
-    result->size = a->size;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        return PyErr_NoMemory();
-    }
 
     transpose(a->d_ptr, result->d_ptr, n, m);
     return (PyObject *)result;
@@ -481,7 +346,6 @@ static PyObject *_sum(PyObject *module, PyObject *args)
     if (!PyArg_ParseTuple(args, "O!", &_TensorType, &a)) return NULL;
 
     float result = sum(a->d_ptr, a->size);
-
     return PyFloat_FromDouble((double)result);
 }
 
@@ -495,7 +359,7 @@ static PyObject *_sum_axis(PyObject *module, PyObject *args)
         return NULL;
 
     int a_dim, *a_shape;
-    tuple_to_array(a_shape_obj, &a_shape, &a_dim);
+    if (tuple_to_array(a_shape_obj, &a_shape, &a_dim) < 0) return NULL;
 
     int outer_stride = sum_axis_product(a_shape, 0, axis);
     int axis_dim = a_shape[axis];
@@ -503,102 +367,40 @@ static PyObject *_sum_axis(PyObject *module, PyObject *args)
 
     free(a_shape);
 
-    _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
+    _Tensor *result = alloc_result(outer_stride * inner_stride);
     if (!result) return NULL;
-
-    result->size = outer_stride * inner_stride;
-    result->d_ptr = alloc_memory(result->size * sizeof(float));
-
-    if (!result->d_ptr) {
-        Py_DECREF(result);
-        return PyErr_NoMemory();
-    }
 
     sum_axis(a->d_ptr, result->d_ptr, outer_stride, inner_stride, axis_dim);
     return (PyObject *)result;
 }
 
-// instance methods for Tensor object
+/* ---- type & module definitions ---- */
 static PyMethodDef _Tensor_instance_methods[] = {
     {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
     {"_to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Export data to list"},
     {"_to_np", (PyCFunction)_Tensor_to_np, METH_VARARGS, "Copy to np array"},
     {NULL}};
 
-// instance members for Tensor object
 static PyMemberDef _Tensor_members[] = {
     {"size", T_INT, offsetof(_Tensor, size), READONLY, "Size of the tensor"}, {NULL}};
 
-// module functions
 static PyMethodDef module_methods[] = {
-    // arithmetic operations
-    // add
-    OP_METHOD(_add_tensor),
-    OP_METHOD(_add_scalar),
-    OP_METHOD(_add_broadcasted),
-    // subtract
-    OP_METHOD(_sub_tensor),
-    OP_METHOD(_sub_scalar),
-    OP_METHOD(_rsub_scalar),
-    OP_METHOD(_sub_broadcasted),
-    OP_METHOD(_isub_inplace),
-    // multiply
-    OP_METHOD(_mul_tensor),
-    OP_METHOD(_mul_scalar),
-    OP_METHOD(_mul_broadcasted),
-    // true division
-    OP_METHOD(_truediv_tensor),
-    OP_METHOD(_truediv_scalar),
-    OP_METHOD(_rtruediv_scalar),
-    OP_METHOD(_truediv_broadcasted),
-    // power
-    OP_METHOD(_pow_tensor),
-    OP_METHOD(_pow_scalar),
-    OP_METHOD(_rpow_scalar),
+/* Element-wise operator table, generated from operators.def. */
+#define EMBER_BINARY_OP(name, expr) OP_METHOD(_##name##_tensor),
+#define EMBER_SCALAR_OP(name, expr) OP_METHOD(_##name##_scalar),
+#define EMBER_BROADCAST_OP(name, expr) OP_METHOD(_##name##_broadcasted),
+#define EMBER_UNARY_OP(name, expr) OP_METHOD(_##name),
+#include "operators.def"
 
-    // comparison operators
-    // max
-    OP_METHOD(_max_tensor),
-    OP_METHOD(_max_scalar),
-    // min
-    OP_METHOD(_min_tensor),
-    OP_METHOD(_min_scalar),
-    // greater than
-    OP_METHOD(_gt_tensor),
-    OP_METHOD(_gt_scalar),
-    // less than
-    OP_METHOD(_lt_tensor),
-    OP_METHOD(_lt_scalar),
-
-    // unary operators
-    // arithmetic
-    OP_METHOD(_negate),
-    OP_METHOD(_exponent),
-    OP_METHOD(_sqrt),
-    // trigonometric
-    OP_METHOD(_sin),
-    OP_METHOD(_cos),
-    OP_METHOD(_tan),
-    OP_METHOD(_ctg),
-    // trigonometric hyperbolic
-    OP_METHOD(_sinh),
-    OP_METHOD(_cosh),
-    OP_METHOD(_tanh),
-    OP_METHOD(_ctgh),
-
-    // misc
+    /* non-element-wise operators */
     OP_METHOD(_matmul),
     OP_METHOD(_transpose),
     OP_METHOD(_from_numpy),
-
-    // summations
     OP_METHOD(_sum),
     OP_METHOD(_sum_axis),
 
-    // end
     {NULL}};
 
-// Tensor type
 static PyTypeObject _TensorType = {
     PyVarObject_HEAD_INIT(NULL, 0).tp_name = "ember._core._tensor._Tensor",
     .tp_basicsize = sizeof(_Tensor),
@@ -611,13 +413,11 @@ static PyTypeObject _TensorType = {
     .tp_dealloc = (destructor)_Tensor_dealloc,
 };
 
-// _tensor module
 static PyModuleDef tensor_module = {
     PyModuleDef_HEAD_INIT, .m_name = "ember._core._tensor", .m_doc = "Ember Tensor backend",
     .m_size = -1,          .m_methods = module_methods,
 };
 
-// initialize module
 PyMODINIT_FUNC PyInit__tensor(void)
 {
     if (PyType_Ready(&_TensorType) < 0) return NULL;

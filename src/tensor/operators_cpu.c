@@ -2,124 +2,59 @@
 
 #include "operators.h"
 
-#define BINARY_OP(NAME, EXPRESSION)                                          \
-    void NAME##_tensor(const float *a, const float *b, float *out, int size) \
+/* Element-wise CPU implementations, generated from operators.def.
+ * Each macro expands one table entry into a full function body. */
+#define EMBER_BINARY_OP(name, expr)                                          \
+    void name##_tensor(const float *a, const float *b, float *out, int size) \
     {                                                                        \
-        for (int i = 0; i < size; i++) out[i] = EXPRESSION;                  \
+        for (int i = 0; i < size; i++) out[i] = (expr);                      \
     }
 
-#define SCALAR_OP(NAME, EXPRESSION)                                         \
-    void NAME##_scalar(const float *a, const float b, float *out, int size) \
-    {                                                                       \
-        for (int i = 0; i < size; i++) out[i] = EXPRESSION;                 \
+#define EMBER_SCALAR_OP(name, expr)                                    \
+    void name##_scalar(const float *a, float b, float *out, int size)  \
+    {                                                                  \
+        for (int i = 0; i < size; i++) out[i] = (expr);                \
     }
 
-#define INPLACE_OP(NAME, EXPRESSION)                        \
-    void NAME##_inplace(float *a, const float *b, int size) \
-    {                                                       \
-        for (int i = 0; i < size; i++) a[i] = EXPRESSION;   \
-    }
-
-#define UNARY_OP(NAME, EXPRESSION)                           \
-    void NAME##_tensor(const float *a, float *out, int size) \
+#define EMBER_UNARY_OP(name, expr)                           \
+    void name##_tensor(const float *a, float *out, int size) \
     {                                                        \
-        for (int i = 0; i < size; i++) out[i] = EXPRESSION;  \
+        for (int i = 0; i < size; i++) out[i] = (expr);      \
     }
 
-#define BROADCAST_OP(NAME, OPERATION)                                                     \
-    void NAME##_broadcasted(const float *a, const float *b, float *out, const int *shape, \
-                            const int *strides_a, const int *strides_b, int ndim)         \
-    {                                                                                     \
-        int total_elements = 1;                                                           \
-        for (int i = 0; i < ndim; i++) {                                                  \
-            total_elements *= shape[i];                                                   \
-        }                                                                                 \
-        for (int i = 0; i < total_elements; i++) {                                        \
-            int temp_idx = i;                                                             \
-            int offset_a = 0;                                                             \
-            int offset_b = 0;                                                             \
-            for (int d = ndim - 1; d >= 0; d--) {                                         \
-                int coord = temp_idx % shape[d];                                          \
-                temp_idx /= shape[d];                                                     \
-                offset_a += coord * strides_a[d];                                         \
-                offset_b += coord * strides_b[d];                                         \
-            }                                                                             \
-                                                                                          \
-            out[i] = OPERATION;                                                           \
-        }                                                                                 \
+#define EMBER_BROADCAST_OP(name, expr)                                        \
+    void name##_broadcasted(const float *a, const float *b, float *out,       \
+                            const int *shape, const int *strides_a,           \
+                            const int *strides_b, int ndim)                   \
+    {                                                                         \
+        int total = 1;                                                        \
+        for (int d = 0; d < ndim; d++) total *= shape[d];                     \
+        for (int i = 0; i < total; i++) {                                     \
+            int rem = i, ia = 0, ib = 0;                                      \
+            for (int d = ndim - 1; d >= 0; d--) {                             \
+                int coord = rem % shape[d];                                   \
+                rem /= shape[d];                                              \
+                ia += coord * strides_a[d];                                   \
+                ib += coord * strides_b[d];                                   \
+            }                                                                 \
+            out[i] = (expr);                                                  \
+        }                                                                     \
     }
 
-// tensor operator implementations
-BINARY_OP(add, a[i] + b[i])
-BINARY_OP(sub, a[i] - b[i])
-BINARY_OP(mul, a[i] * b[i])
-BINARY_OP(truediv, a[i] / b[i])
-BINARY_OP(max, fmaxf(a[i], b[i]))
-BINARY_OP(min, fminf(a[i], b[i]))
-BINARY_OP(gt, (a[i] > b[i]) ? 1.0f : 0.0f)
-BINARY_OP(lt, (a[i] < b[i]) ? 1.0f : 0.0f)
-BINARY_OP(pow, powf(a[i], b[i]))
+#include "operators.def"
 
-// scalar operator implementations
-SCALAR_OP(add, a[i] + b)
-SCALAR_OP(sub, a[i] - b)
-SCALAR_OP(rsub, b - a[i])
-SCALAR_OP(mul, a[i] * b)
-SCALAR_OP(rtruediv, b / a[i])
-SCALAR_OP(max, fmaxf(a[i], b))
-SCALAR_OP(min, fminf(a[i], b))
-SCALAR_OP(gt, (a[i] > b) ? 1.0f : 0.0f)
-SCALAR_OP(lt, (a[i] < b) ? 1.0f : 0.0f)
-SCALAR_OP(pow, powf(a[i], b))
-SCALAR_OP(rpow, powf(b, a[i]))
-
-// optimization
-void truediv_scalar(const float *a, const float b, float *out, int size)
-{
-    float inv_b = 1.0f / b;
-    for (int i = 0; i < size; i++) out[i] = a[i] * inv_b;
-}
-
-// broadcasted operator implementations
-BROADCAST_OP(add, a[offset_a] + b[offset_b])
-BROADCAST_OP(sub, a[offset_a] - b[offset_b])
-BROADCAST_OP(mul, a[offset_a] * b[offset_b])
-BROADCAST_OP(truediv, a[offset_a] / b[offset_b])
-
-// unary implementations
-UNARY_OP(negate, -a[i])
-UNARY_OP(exponent, expf(a[i]))
-UNARY_OP(sqrt, sqrtf(a[i]))
-
-UNARY_OP(sin, sinf(a[i]))
-UNARY_OP(cos, cosf(a[i]))
-UNARY_OP(tan, tanf(a[i]))
-UNARY_OP(ctg, 1.0f / tanf(a[i]))
-
-UNARY_OP(sinh, sinhf(a[i]))
-UNARY_OP(cosh, coshf(a[i]))
-UNARY_OP(tanh, tanhf(a[i]))
-UNARY_OP(ctgh, 1.0f / tanhf(a[i]))
-
-// inplace implementations
-INPLACE_OP(isub, a[i] - b[i])
-
-// cleanup macros
-#undef BINARY_OP
-#undef SCALAR_OP
-#undef UNARY_OP
-#undef BROADCAST_OP
-
-// misc implementations
+/* ---- non-element-wise operators ---- */
 void matmul(const float *a, const float *b, float *out, int n, int m, int k)
 {
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++) {
-            float sum = 0.0f;
+            // Accumulate in double to keep the naive kernel's rounding error
+            // close to a BLAS reference (the GPU backend uses cuBLAS).
+            double acc = 0.0;
             for (int l = 0; l < k; l++) {
-                sum += a[i * k + l] * b[l * m + j];
+                acc += (double)a[i * k + l] * (double)b[l * m + j];
             }
-            out[i * m + j] = sum;
+            out[i * m + j] = (float)acc;
         }
     }
 }
@@ -140,7 +75,7 @@ float sum(const float *a, int size)
     return s;
 }
 
-int sum_axis_product(int *shape, int start, int end)
+int sum_axis_product(const int *shape, int start, int end)
 {
     int p = 1;
     for (int i = start; i < end; i++) p *= shape[i];

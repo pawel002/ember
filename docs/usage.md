@@ -46,10 +46,19 @@ th = em.tanh(a)
 
 ### Matrix Multiplication
 
+Use the `@` operator for 2-D matrix multiplication.
+
 ```python
-# Create 2x2 matrices (flattened logic for now, or reshape support pending)
-# Note: Current implementation is basic.
-pass
+import ember as em
+from ember import Tensor
+
+a = Tensor([[1.0, 2.0], [3.0, 4.0]])  # (2, 2)
+b = Tensor([[5.0, 6.0], [7.0, 8.0]])  # (2, 2)
+
+c = a @ b            # matrix product
+d = em.T(a)          # transpose
+s = em.sum(a)        # sum of all elements -> float
+row_sums = em.sum(a, axis=1)  # sum along an axis -> Tensor
 ```
 
 ## Data Exchange
@@ -57,9 +66,42 @@ pass
 Convert back to standard Python/NumPy types easily.
 
 ```python
-# To List
+# To a (nested) Python list
 data_list = c.to_list()
 
 # To NumPy
 data_np = c.to_np()
+```
+
+## Building and Training a Model
+
+Ember ships small `nn` and `optim` modules with explicit (manual) gradients.
+
+```python
+import numpy as np
+
+import ember as em
+import ember.nn as nn
+import ember.optim as optim
+from ember import Tensor
+
+em.random.seed(0)  # reproducible weight init
+
+model = nn.Sequential(
+    nn.Linear(4, 8),
+    nn.ReLU(),
+    nn.Linear(8, 1),
+)
+opt = optim.Adam(model.parameters(), lr=1e-2)
+
+x = Tensor(np.random.randn(16, 4).astype(np.float32))
+target = Tensor(np.random.randn(16, 1).astype(np.float32))
+
+# forward
+pred = model(x, training=True)
+
+# backward (mean-squared-error gradient), then an optimizer step
+grad = (pred - target) * (2.0 / pred.shape[0])
+model.backward(grad)
+opt.apply(model.gradients())
 ```

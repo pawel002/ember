@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #include "memory.h"
-#include "utils_cuda.cuh"
+#include "utils_gpu.cuh"
 
 extern "C" {
 

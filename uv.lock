@@ -152,12 +152,11 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
-    { name = "pre-commit" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "numpy" },
+    { name = "pre-commit" },
     { name = "pytest" },
 ]
 docs = [
@@ -167,14 +166,11 @@ docs = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=2.3.5" },
-    { name = "pre-commit", specifier = ">=4.5.1" },
-]
+requires-dist = [{ name = "numpy", specifier = ">=2.3.5" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "numpy" },
+    { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=8.0" },
 ]
 docs = [

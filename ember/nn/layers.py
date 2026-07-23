@@ -48,8 +48,7 @@ class Linear(Layer):
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
-        assert self.x, "self.x needed for backward()"
-        assert self.w, "self.w needed for backward()"
+        assert self.x is not None, "forward() must run before backward()"
 
         self.grad_w = em.T(self.x) @ grad_y
         self.grad_b = em.sum(grad_y, axis=0)  # type: ignore

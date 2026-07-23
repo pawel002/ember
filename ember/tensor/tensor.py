@@ -74,6 +74,14 @@ class Tensor:
     _core: _Tensor
 
     def __init__(self, data: Any):
+        # NumPy arrays go through the zero-copy buffer path.
+        if isinstance(data, np.ndarray):
+            self.shape = tuple(data.shape)
+            self.strides = calculate_contiguous_strides(self.shape)
+            self.dtype = "float32"  # backend is float32-only for now
+            self._core = _from_numpy(data.astype(np.float32))
+            return
+
         shape, dtype_cls, flat_data = extract_data_info(data)
         self.shape = shape
         self.strides = calculate_contiguous_strides(self.shape)
@@ -176,11 +184,33 @@ class Tensor:
     def __neg__(self):
         return Tensor._from_core(_negate(self._core), self.shape, self.dtype)
 
+    # In-place operators. These recompute the result and adopt its buffer, so
+    # `x += y` mutates the *same* Tensor object in place (as optimizers rely on),
+    # rather than rebinding the name to a fresh Tensor.
+    def _adopt(self, other: Tensor) -> Tensor:
+        self._core = other._core
+        self.shape = other.shape
+        self.strides = other.strides
+        self.dtype = other.dtype
+        return self
+
+    def __iadd__(self, other: BinaryOpType) -> Tensor:
+        return self._adopt(self + other)
+
+    def __isub__(self, other: BinaryOpType) -> Tensor:
+        return self._adopt(self - other)
+
+    def __imul__(self, other: BinaryOpType) -> Tensor:
+        return self._adopt(self * other)
+
+    def __itruediv__(self, other: BinaryOpType) -> Tensor:
+        return self._adopt(self / other)
+
     def to_np(self) -> NDArray:
         result = self._core._to_np()
         return result.reshape(self.shape)
 
-    def to_cpu(self) -> list[Any]:
+    def to_list(self) -> list[Any]:
         return self._core._to_list(self.shape)
 
     def reshape(self, new_shape: tuple[int, ...]) -> Tensor:
@@ -207,7 +237,7 @@ class Tensor:
         return self
 
     def __repr__(self):
-        return f"Tensor({self.to_cpu()})"
+        return f"Tensor({self.to_list()})"
 
 
 def _binary_op_wrapper(

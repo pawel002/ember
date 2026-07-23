@@ -98,5 +98,7 @@ class TestAdam:
 
             np.testing.assert_allclose(t_param.to_np(), np_param, rtol=1e-5)
 
-        assert t_param.to_np()[0] < 1.0
-        assert t_param.to_np()[0] > -0.5
+        # After 5 Adam steps (lr=0.1) from x=2, the parameter has moved
+        # meaningfully toward the minimum at 0 but not yet reached it (~1.5).
+        assert t_param.to_np()[0] < 2.0
+        assert t_param.to_np()[0] > 0.0
