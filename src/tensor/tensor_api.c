@@ -7,8 +7,7 @@
 #include "operators.h"
 #include "tensor_helpers.h"
 
-#define OP_METHOD(NAME) \
-    {#NAME, (PyCFunction)NAME, METH_VARARGS, "Element-wise " #NAME " operation"}
+#define OP_METHOD(NAME) {#NAME, (PyCFunction)NAME, METH_VARARGS, "Element-wise " #NAME " operation"}
 
 typedef void (*binary_tensor_op_func)(const float *, const float *, float *, int);
 typedef void (*binary_scalar_op_func)(const float *, float, float *, int);
@@ -87,6 +86,7 @@ static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
 
     Py_ssize_t ndim = PyTuple_Size(shape_tuple);
     long *c_dims = (long *)malloc(ndim * sizeof(long));
+    if (!c_dims) return PyErr_NoMemory();
     long total_elements = 1;
 
     for (Py_ssize_t i = 0; i < ndim; i++) {
@@ -279,24 +279,24 @@ static PyObject *impl_tensor_unary_op(PyObject *module, PyObject *args, unary_te
 }
 
 /* ---- Python wrappers, generated from operators.def ---- */
-#define EMBER_BINARY_OP(name, expr)                                 \
-    static PyObject *_##name##_tensor(PyObject *m, PyObject *args)   \
-    {                                                               \
-        return impl_tensor_binary_op(m, args, name##_tensor);       \
+#define EMBER_BINARY_OP(name, expr)                                \
+    static PyObject *_##name##_tensor(PyObject *m, PyObject *args) \
+    {                                                              \
+        return impl_tensor_binary_op(m, args, name##_tensor);      \
     }
-#define EMBER_SCALAR_OP(name, expr)                                 \
-    static PyObject *_##name##_scalar(PyObject *m, PyObject *args)   \
-    {                                                               \
-        return impl_float_binary_op(m, args, name##_scalar);        \
+#define EMBER_SCALAR_OP(name, expr)                                \
+    static PyObject *_##name##_scalar(PyObject *m, PyObject *args) \
+    {                                                              \
+        return impl_float_binary_op(m, args, name##_scalar);       \
     }
-#define EMBER_BROADCAST_OP(name, expr)                                    \
-    static PyObject *_##name##_broadcasted(PyObject *m, PyObject *args)    \
-    {                                                                     \
+#define EMBER_BROADCAST_OP(name, expr)                                         \
+    static PyObject *_##name##_broadcasted(PyObject *m, PyObject *args)        \
+    {                                                                          \
         return impl_tensor_broadcasted_binary_op(m, args, name##_broadcasted); \
     }
-#define EMBER_UNARY_OP(name, expr)                        \
-    static PyObject *_##name(PyObject *m, PyObject *args)  \
-    {                                                     \
+#define EMBER_UNARY_OP(name, expr)                           \
+    static PyObject *_##name(PyObject *m, PyObject *args)    \
+    {                                                        \
         return impl_tensor_unary_op(m, args, name##_tensor); \
     }
 #include "operators.def"
