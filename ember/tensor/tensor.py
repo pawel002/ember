@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, Union
+from typing import Any, Literal, Union, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -381,15 +381,19 @@ def _normalize_axis(a: Tensor, axis: int) -> int:
     return axis
 
 
-def _reduced_shape(shape: tuple[int, ...], axis: int, keepdims: bool) -> tuple[int, ...]:
+def _reduced_shape(
+    shape: tuple[int, ...], axis: int, keepdims: bool
+) -> tuple[int, ...]:
     if keepdims:
         return tuple(1 if i == axis else d for i, d in enumerate(shape))
     return tuple(d for i, d in enumerate(shape) if i != axis)
 
 
-def sum(
-    a: Tensor, axis: int | None = None, keepdims: bool = False
-) -> Tensor | float:
+@overload
+def sum(a: Tensor, axis: None = ..., keepdims: bool = ...) -> float: ...
+@overload
+def sum(a: Tensor, axis: int, keepdims: bool = ...) -> Tensor: ...
+def sum(a: Tensor, axis: int | None = None, keepdims: bool = False) -> Tensor | float:
     assert_tensor_unary(a, "sum()")
 
     if axis is None:
