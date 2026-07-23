@@ -15,6 +15,8 @@ extern "C" {
     void name##_broadcasted(const float *a, const float *b, float *out, const int *shape, \
                             const int *strides_a, const int *strides_b, int ndim);
 #define EMBER_UNARY_OP(name, expr) void name##_tensor(const float *a, float *out, int size);
+#define EMBER_INPLACE_OP(name, expr) void name##_inplace(float *a, const float *b, int size);
+#define EMBER_INPLACE_SCALAR_OP(name, expr) void name##_scalar_inplace(float *a, float b, int size);
 #include "operators.def"
 
 /* Non-element-wise operators (hand-written per backend). */

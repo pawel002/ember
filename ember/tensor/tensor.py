@@ -23,6 +23,14 @@ from ember._core import (
     _from_numpy,
     _gt_scalar,
     _gt_tensor,
+    _iadd,
+    _iadd_scalar,
+    _imul,
+    _imul_scalar,
+    _isub,
+    _isub_scalar,
+    _itruediv,
+    _itruediv_scalar,
     _log,
     _lt_scalar,
     _lt_tensor,
@@ -199,9 +207,10 @@ class Tensor:
     def __neg__(self):
         return Tensor._from_core(_negate(self._core), self.shape, self.dtype)
 
-    # In-place operators. These recompute the result and adopt its buffer, so
-    # `x += y` mutates the *same* Tensor object in place (as optimizers rely on),
-    # rather than rebinding the name to a fresh Tensor.
+    # In-place operators mutate this tensor's device buffer directly (no
+    # allocation) when shapes match, so the buffer address stays stable across
+    # iterations -- optimizers rely on this, and it is required for CUDA-graph
+    # capture. The broadcasting case falls back to allocate-and-adopt.
     def _adopt(self, other: Tensor) -> Tensor:
         self._core = other._core
         self.shape = other.shape
@@ -209,17 +218,30 @@ class Tensor:
         self.dtype = other.dtype
         return self
 
+    def _inplace(self, other, scalar_ip, tensor_ip, oop) -> Tensor:
+        if isinstance(other, (int, float)):
+            scalar_ip(self._core, float(other))
+            return self
+        if isinstance(other, Tensor):
+            if self.shape == other.shape:
+                tensor_ip(self._core, other._core)
+                return self
+            return self._adopt(oop(other))  # broadcasting: cannot do in place
+        raise TypeError(
+            f"unsupported operand type for in-place op: '{type(other).__name__}'"
+        )
+
     def __iadd__(self, other: BinaryOpType) -> Tensor:
-        return self._adopt(self + other)
+        return self._inplace(other, _iadd_scalar, _iadd, self.__add__)
 
     def __isub__(self, other: BinaryOpType) -> Tensor:
-        return self._adopt(self - other)
+        return self._inplace(other, _isub_scalar, _isub, self.__sub__)
 
     def __imul__(self, other: BinaryOpType) -> Tensor:
-        return self._adopt(self * other)
+        return self._inplace(other, _imul_scalar, _imul, self.__mul__)
 
     def __itruediv__(self, other: BinaryOpType) -> Tensor:
-        return self._adopt(self / other)
+        return self._inplace(other, _itruediv_scalar, _itruediv, self.__truediv__)
 
     def to_np(self) -> NDArray:
         result = self._core._to_np()

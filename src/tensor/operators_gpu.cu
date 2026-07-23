@@ -106,6 +106,30 @@ static cublasHandle_t cublas_handle(void)
         free_memory(d_sb);                                                                        \
     }
 
+#define EMBER_INPLACE_OP(name, expr)                                       \
+    __global__ void k_##name##_inplace(float *a, const float *b, int size) \
+    {                                                                      \
+        int i = blockIdx.x * blockDim.x + threadIdx.x;                     \
+        if (i < size) a[i] = (expr);                                       \
+    }                                                                      \
+    extern "C" void name##_inplace(float *a, const float *b, int size)     \
+    {                                                                      \
+        k_##name##_inplace<<<grid(size), BLOCK_SIZE>>>(a, b, size);        \
+        CUDA_POST_LAUNCH();                                                \
+    }
+
+#define EMBER_INPLACE_SCALAR_OP(name, expr)                                \
+    __global__ void k_##name##_scalar_inplace(float *a, float b, int size) \
+    {                                                                      \
+        int i = blockIdx.x * blockDim.x + threadIdx.x;                     \
+        if (i < size) a[i] = (expr);                                       \
+    }                                                                      \
+    extern "C" void name##_scalar_inplace(float *a, float b, int size)     \
+    {                                                                      \
+        k_##name##_scalar_inplace<<<grid(size), BLOCK_SIZE>>>(a, b, size); \
+        CUDA_POST_LAUNCH();                                                \
+    }
+
 #include "operators.def"
 
 /* ---- non-element-wise operators ---- */

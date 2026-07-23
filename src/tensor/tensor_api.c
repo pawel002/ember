@@ -14,6 +14,8 @@ typedef void (*binary_scalar_op_func)(const float *, float, float *, int);
 typedef void (*unary_tensor_op_func)(const float *, float *, int);
 typedef void (*binary_tensor_broadcasted_op_func)(const float *, const float *, float *,
                                                   const int *, const int *, const int *, int);
+typedef void (*inplace_tensor_op_func)(float *, const float *, int);
+typedef void (*inplace_scalar_op_func)(float *, float, int);
 
 static PyTypeObject _TensorType;
 
@@ -278,6 +280,31 @@ static PyObject *impl_tensor_unary_op(PyObject *module, PyObject *args, unary_te
     return (PyObject *)result;
 }
 
+/* In-place ops mutate the first operand's buffer and allocate nothing. */
+static PyObject *impl_inplace_tensor_op(PyObject *args, inplace_tensor_op_func op)
+{
+    _Tensor *a, *b;
+    if (!PyArg_ParseTuple(args, "O!O!", &_TensorType, &a, &_TensorType, &b)) return NULL;
+
+    if (a->size != b->size) {
+        PyErr_Format(PyExc_ValueError, "Size mismatch: %d vs %d", a->size, b->size);
+        return NULL;
+    }
+
+    op(a->d_ptr, b->d_ptr, a->size);
+    Py_RETURN_NONE;
+}
+
+static PyObject *impl_inplace_scalar_op(PyObject *args, inplace_scalar_op_func op)
+{
+    _Tensor *a;
+    float b;
+    if (!PyArg_ParseTuple(args, "O!f", &_TensorType, &a, &b)) return NULL;
+
+    op(a->d_ptr, b, a->size);
+    Py_RETURN_NONE;
+}
+
 /* ---- Python wrappers, generated from operators.def ---- */
 #define EMBER_BINARY_OP(name, expr)                                \
     static PyObject *_##name##_tensor(PyObject *m, PyObject *args) \
@@ -298,6 +325,16 @@ static PyObject *impl_tensor_unary_op(PyObject *module, PyObject *args, unary_te
     static PyObject *_##name(PyObject *m, PyObject *args)    \
     {                                                        \
         return impl_tensor_unary_op(m, args, name##_tensor); \
+    }
+#define EMBER_INPLACE_OP(name, expr)                         \
+    static PyObject *_##name(PyObject *m, PyObject *args)    \
+    {                                                        \
+        return impl_inplace_tensor_op(args, name##_inplace); \
+    }
+#define EMBER_INPLACE_SCALAR_OP(name, expr)                         \
+    static PyObject *_##name##_scalar(PyObject *m, PyObject *args)  \
+    {                                                               \
+        return impl_inplace_scalar_op(args, name##_scalar_inplace); \
     }
 #include "operators.def"
 
@@ -428,6 +465,8 @@ static PyMethodDef module_methods[] = {
 #define EMBER_SCALAR_OP(name, expr) OP_METHOD(_##name##_scalar),
 #define EMBER_BROADCAST_OP(name, expr) OP_METHOD(_##name##_broadcasted),
 #define EMBER_UNARY_OP(name, expr) OP_METHOD(_##name),
+#define EMBER_INPLACE_OP(name, expr) OP_METHOD(_##name),
+#define EMBER_INPLACE_SCALAR_OP(name, expr) OP_METHOD(_##name##_scalar),
 #include "operators.def"
 
     /* non-element-wise operators */

@@ -41,6 +41,18 @@
         }                                                                                 \
     }
 
+#define EMBER_INPLACE_OP(name, expr)                        \
+    void name##_inplace(float *a, const float *b, int size) \
+    {                                                       \
+        for (int i = 0; i < size; i++) a[i] = (expr);       \
+    }
+
+#define EMBER_INPLACE_SCALAR_OP(name, expr)                 \
+    void name##_scalar_inplace(float *a, float b, int size) \
+    {                                                       \
+        for (int i = 0; i < size; i++) a[i] = (expr);       \
+    }
+
 #include "operators.def"
 
 /* ---- non-element-wise operators ---- */

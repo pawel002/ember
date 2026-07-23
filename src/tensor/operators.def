@@ -35,6 +35,12 @@
 #ifndef EMBER_UNARY_OP
 #define EMBER_UNARY_OP(name, expr)
 #endif
+#ifndef EMBER_INPLACE_OP
+#define EMBER_INPLACE_OP(name, expr)
+#endif
+#ifndef EMBER_INPLACE_SCALAR_OP
+#define EMBER_INPLACE_SCALAR_OP(name, expr)
+#endif
 
 /* ---- tensor <op> tensor ---- */
 EMBER_BINARY_OP(add, a[i] + b[i])
@@ -81,7 +87,21 @@ EMBER_UNARY_OP(cosh, coshf(a[i]))
 EMBER_UNARY_OP(tanh, tanhf(a[i]))
 EMBER_UNARY_OP(ctgh, 1.0f / tanhf(a[i]))
 
+/* ---- in-place: a <op>= tensor (same shape) ---- */
+EMBER_INPLACE_OP(iadd, a[i] + b[i])
+EMBER_INPLACE_OP(isub, a[i] - b[i])
+EMBER_INPLACE_OP(imul, a[i] * b[i])
+EMBER_INPLACE_OP(itruediv, a[i] / b[i])
+
+/* ---- in-place: a <op>= scalar ---- */
+EMBER_INPLACE_SCALAR_OP(iadd, a[i] + b)
+EMBER_INPLACE_SCALAR_OP(isub, a[i] - b)
+EMBER_INPLACE_SCALAR_OP(imul, a[i] * b)
+EMBER_INPLACE_SCALAR_OP(itruediv, a[i] / b)
+
 #undef EMBER_BINARY_OP
 #undef EMBER_SCALAR_OP
 #undef EMBER_BROADCAST_OP
 #undef EMBER_UNARY_OP
+#undef EMBER_INPLACE_OP
+#undef EMBER_INPLACE_SCALAR_OP
