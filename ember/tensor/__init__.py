@@ -1,6 +1,7 @@
 from .tensor import (
     T,
     Tensor,
+    amax,
     cos,
     cosh,
     ctg,
@@ -10,6 +11,7 @@ from .tensor import (
     min,
     sin,
     sinh,
+    softmax,
     sqrt,
     sum,
     tan,
@@ -20,6 +22,7 @@ __all__ = [
     "Tensor",
     "max",
     "min",
+    "amax",
     "exp",
     "sin",
     "cos",
@@ -31,5 +34,6 @@ __all__ = [
     "ctgh",
     "T",
     "sum",
+    "softmax",
     "sqrt",
 ]

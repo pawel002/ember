@@ -26,6 +26,7 @@ from ember._core import (
     _lt_scalar,
     _lt_tensor,
     _matmul,
+    _max_axis,
     _max_scalar,
     _max_tensor,
     _min_scalar,
@@ -366,22 +367,53 @@ def T(a: Tensor) -> Tensor:
     return Tensor._from_core(result_core, result_shape, a.dtype)
 
 
-# misc
-def sum(a: Tensor, axis: int | None = None) -> Tensor | float:
+# reductions
+def _normalize_axis(a: Tensor, axis: int) -> int:
+    a_dim = len(a.shape)
+    axis = axis if axis >= 0 else axis + a_dim
+    if axis < 0 or axis >= a_dim:
+        raise ValueError(f"Axis {axis} out of bound for {a_dim} dim Tensor")
+    return axis
+
+
+def _reduced_shape(shape: tuple[int, ...], axis: int, keepdims: bool) -> tuple[int, ...]:
+    if keepdims:
+        return tuple(1 if i == axis else d for i, d in enumerate(shape))
+    return tuple(d for i, d in enumerate(shape) if i != axis)
+
+
+def sum(
+    a: Tensor, axis: int | None = None, keepdims: bool = False
+) -> Tensor | float:
     assert_tensor_unary(a, "sum()")
 
     if axis is None:
         return _sum(a._core)
 
-    a_dim = len(a.shape)
-    axis = axis if axis >= 0 else axis + a_dim
-
-    if axis < 0 or axis >= a_dim:
-        raise ValueError(f"Axis {axis} out of bound for {a_dim} dim Tensor")
-
-    result_shape = tuple(a.shape[i] for i in range(len(a.shape)) if i != axis)
+    axis = _normalize_axis(a, axis)
     result_core = _sum_axis(a._core, a.shape, axis)
+    result_shape = _reduced_shape(a.shape, axis, keepdims)
     return Tensor._from_core(result_core, result_shape, a.dtype)
+
+
+def amax(a: Tensor, axis: int, keepdims: bool = False) -> Tensor:
+    """Maximum along ``axis`` (reduction), as opposed to the element-wise ``max``."""
+    assert_tensor_unary(a, "amax()")
+
+    axis = _normalize_axis(a, axis)
+    result_core = _max_axis(a._core, a.shape, axis)
+    result_shape = _reduced_shape(a.shape, axis, keepdims)
+    return Tensor._from_core(result_core, result_shape, a.dtype)
+
+
+def softmax(a: Tensor, axis: int = -1) -> Tensor:
+    """Numerically-stable softmax along ``axis``."""
+    assert_tensor_unary(a, "softmax()")
+
+    axis = _normalize_axis(a, axis)
+    shifted = a - amax(a, axis=axis, keepdims=True)
+    e = exp(shifted)
+    return e / sum(e, axis=axis, keepdims=True)
 
 
 # verifiers

@@ -182,4 +182,27 @@ void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, in
     k_sum_axis<<<grid(total), BLOCK_SIZE>>>(a, out, outer_stride, inner_stride, axis_dim);
     CUDA_POST_LAUNCH();
 }
+
+__global__ void k_max_axis(const float *a, float *out, int outer_stride, int inner_stride,
+                           int axis_dim)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = outer_stride * inner_stride;
+    if (idx >= total) return;
+
+    int o = idx / inner_stride;
+    int i = idx % inner_stride;
+    int input_base = o * (axis_dim * inner_stride) + i;
+
+    float m = a[input_base];
+    for (int r = 1; r < axis_dim; r++) m = fmaxf(m, a[input_base + (r * inner_stride)]);
+    out[idx] = m;
+}
+
+void max_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim)
+{
+    int total = outer_stride * inner_stride;
+    k_max_axis<<<grid(total), BLOCK_SIZE>>>(a, out, outer_stride, inner_stride, axis_dim);
+    CUDA_POST_LAUNCH();
+}
 }

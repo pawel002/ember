@@ -349,7 +349,9 @@ static PyObject *_sum(PyObject *module, PyObject *args)
     return PyFloat_FromDouble((double)result);
 }
 
-static PyObject *_sum_axis(PyObject *module, PyObject *args)
+typedef void (*axis_reduce_func)(const float *, float *, int, int, int);
+
+static PyObject *impl_axis_reduce(PyObject *args, axis_reduce_func op)
 {
     _Tensor *a;
     PyObject *a_shape_obj;
@@ -370,8 +372,18 @@ static PyObject *_sum_axis(PyObject *module, PyObject *args)
     _Tensor *result = alloc_result(outer_stride * inner_stride);
     if (!result) return NULL;
 
-    sum_axis(a->d_ptr, result->d_ptr, outer_stride, inner_stride, axis_dim);
+    op(a->d_ptr, result->d_ptr, outer_stride, inner_stride, axis_dim);
     return (PyObject *)result;
+}
+
+static PyObject *_sum_axis(PyObject *module, PyObject *args)
+{
+    return impl_axis_reduce(args, sum_axis);
+}
+
+static PyObject *_max_axis(PyObject *module, PyObject *args)
+{
+    return impl_axis_reduce(args, max_axis);
 }
 
 /* ---- type & module definitions ---- */
@@ -398,6 +410,7 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_from_numpy),
     OP_METHOD(_sum),
     OP_METHOD(_sum_axis),
+    OP_METHOD(_max_axis),
 
     {NULL}};
 

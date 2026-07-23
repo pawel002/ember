@@ -14,6 +14,7 @@ from ._tensor import (
     _lt_scalar,
     _lt_tensor,
     _matmul,
+    _max_axis,
     _max_scalar,
     _max_tensor,
     _min_scalar,
@@ -100,6 +101,7 @@ __all__ = [
     "_truediv_broadcasted",
     "_sum",
     "_sum_axis",
+    "_max_axis",
     "_from_numpy",
     # distributions
     "_uniform",

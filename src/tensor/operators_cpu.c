@@ -10,10 +10,10 @@
         for (int i = 0; i < size; i++) out[i] = (expr);                      \
     }
 
-#define EMBER_SCALAR_OP(name, expr)                                    \
-    void name##_scalar(const float *a, float b, float *out, int size)  \
-    {                                                                  \
-        for (int i = 0; i < size; i++) out[i] = (expr);                \
+#define EMBER_SCALAR_OP(name, expr)                                   \
+    void name##_scalar(const float *a, float b, float *out, int size) \
+    {                                                                 \
+        for (int i = 0; i < size; i++) out[i] = (expr);               \
     }
 
 #define EMBER_UNARY_OP(name, expr)                           \
@@ -22,23 +22,22 @@
         for (int i = 0; i < size; i++) out[i] = (expr);      \
     }
 
-#define EMBER_BROADCAST_OP(name, expr)                                        \
-    void name##_broadcasted(const float *a, const float *b, float *out,       \
-                            const int *shape, const int *strides_a,           \
-                            const int *strides_b, int ndim)                   \
-    {                                                                         \
-        int total = 1;                                                        \
-        for (int d = 0; d < ndim; d++) total *= shape[d];                     \
-        for (int i = 0; i < total; i++) {                                     \
-            int rem = i, ia = 0, ib = 0;                                      \
-            for (int d = ndim - 1; d >= 0; d--) {                             \
-                int coord = rem % shape[d];                                   \
-                rem /= shape[d];                                              \
-                ia += coord * strides_a[d];                                   \
-                ib += coord * strides_b[d];                                   \
-            }                                                                 \
-            out[i] = (expr);                                                  \
-        }                                                                     \
+#define EMBER_BROADCAST_OP(name, expr)                                                    \
+    void name##_broadcasted(const float *a, const float *b, float *out, const int *shape, \
+                            const int *strides_a, const int *strides_b, int ndim)         \
+    {                                                                                     \
+        int total = 1;                                                                    \
+        for (int d = 0; d < ndim; d++) total *= shape[d];                                 \
+        for (int i = 0; i < total; i++) {                                                 \
+            int rem = i, ia = 0, ib = 0;                                                  \
+            for (int d = ndim - 1; d >= 0; d--) {                                         \
+                int coord = rem % shape[d];                                               \
+                rem /= shape[d];                                                          \
+                ia += coord * strides_a[d];                                               \
+                ib += coord * strides_b[d];                                               \
+            }                                                                             \
+            out[i] = (expr);                                                              \
+        }                                                                                 \
     }
 
 #include "operators.def"
@@ -93,6 +92,21 @@ void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, in
                 s += a[input_base + (r * inner_stride)];
             }
             out[o * inner_stride + i] = s;
+        }
+    }
+}
+
+void max_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim)
+{
+    for (int o = 0; o < outer_stride; o++) {
+        for (int i = 0; i < inner_stride; i++) {
+            int input_base = o * (axis_dim * inner_stride) + i;
+            float m = a[input_base];
+
+            for (int r = 1; r < axis_dim; r++) {
+                m = fmaxf(m, a[input_base + (r * inner_stride)]);
+            }
+            out[o * inner_stride + i] = m;
         }
     }
 }

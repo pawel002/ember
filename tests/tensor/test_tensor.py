@@ -169,6 +169,34 @@ class TestTensorExhaustive:
 
         for axis in range(len(shape)):
             self._assert_eq(em.sum(t_a, axis=axis), np.sum(np_a, axis=axis))
+            self._assert_eq(
+                em.sum(t_a, axis=axis, keepdims=True),
+                np.sum(np_a, axis=axis, keepdims=True),
+            )
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_amax(self, shape):
+        t_a, np_a = self._gen_tensor(shape)
+
+        for axis in range(len(shape)):
+            self._assert_eq(em.amax(t_a, axis=axis), np.max(np_a, axis=axis))
+            self._assert_eq(
+                em.amax(t_a, axis=axis, keepdims=True),
+                np.max(np_a, axis=axis, keepdims=True),
+            )
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_softmax(self, shape):
+        t_a, np_a = self._gen_tensor(shape)
+
+        for axis in range(len(shape)):
+            e = np.exp(np_a - np_a.max(axis=axis, keepdims=True))
+            ref = e / e.sum(axis=axis, keepdims=True)
+            self._assert_eq(em.softmax(t_a, axis=axis), ref)
+
+        # default axis is the last one
+        e = np.exp(np_a - np_a.max(axis=-1, keepdims=True))
+        self._assert_eq(em.softmax(t_a), e / e.sum(axis=-1, keepdims=True))
 
     @pytest.mark.parametrize(
         "start, target, valid",
