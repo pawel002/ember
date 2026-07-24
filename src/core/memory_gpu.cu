@@ -105,6 +105,27 @@ void copy_from_device(void *dst_host, const void *src_device, size_t bytes)
     GPU_ERR_CHK(cudaMemcpy(dst_host, src_device, bytes, cudaMemcpyDeviceToHost));
 }
 
+// Shared, lazily-grown pinned staging buffer for host->device uploads.
+static void *g_pinned = NULL;
+static size_t g_pinned_bytes = 0;
+
+void copy_to_device_pinned(void *dst_device, const void *src_host, size_t bytes)
+{
+    // Ensure any prior async copy out of the shared staging buffer has finished
+    // before we overwrite it on the host.
+    GPU_ERR_CHK(cudaStreamSynchronize(ember_stream()));
+
+    if (g_pinned_bytes < bytes) {
+        if (g_pinned) GPU_ERR_CHK(cudaFreeHost(g_pinned));
+        GPU_ERR_CHK(cudaMallocHost(&g_pinned, bytes));
+        g_pinned_bytes = bytes;
+    }
+
+    memcpy(g_pinned, src_host, bytes);
+    GPU_ERR_CHK(
+        cudaMemcpyAsync(dst_device, g_pinned, bytes, cudaMemcpyHostToDevice, ember_stream()));
+}
+
 void begin_capture(void)
 {
     GPU_ERR_CHK(cudaStreamBeginCapture(ember_stream(), cudaStreamCaptureModeThreadLocal));

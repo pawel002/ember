@@ -150,6 +150,39 @@ static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
     return arr;
 }
 
+// Update this tensor's existing device buffer in place from a float32 numpy
+// array (via the pinned async upload path). Used to feed fresh batches into a
+// stable buffer, including one captured by a CUDA graph.
+static PyObject *_Tensor_copy_from_numpy(_Tensor *self, PyObject *args)
+{
+    PyObject *obj;
+    if (!PyArg_ParseTuple(args, "O", &obj)) return NULL;
+
+    Py_buffer view;
+    int flags = PyBUF_C_CONTIGUOUS | PyBUF_FORMAT;
+    if (PyObject_GetBuffer(obj, &view, flags) < 0) {
+        PyErr_SetString(PyExc_TypeError, "Expected a C-contiguous numpy array");
+        return NULL;
+    }
+    if (view.format != NULL && strcmp(view.format, "f") != 0) {
+        PyBuffer_Release(&view);
+        PyErr_Format(PyExc_TypeError, "Expected float32 ('f'), got '%s'", view.format);
+        return NULL;
+    }
+
+    int n = (int)(view.len / view.itemsize);
+    if (n != self->size) {
+        PyBuffer_Release(&view);
+        PyErr_Format(PyExc_ValueError, "Size mismatch: array has %d elements, tensor has %d", n,
+                     self->size);
+        return NULL;
+    }
+
+    copy_to_device_pinned(self->d_ptr, view.buf, (size_t)self->size * sizeof(float));
+    PyBuffer_Release(&view);
+    Py_RETURN_NONE;
+}
+
 static PyObject *_from_numpy(PyObject *module, PyObject *args)
 {
     PyObject *obj;
@@ -578,6 +611,8 @@ static PyObject *_graph_destroy(PyObject *module, PyObject *args)
 /* ---- type & module definitions ---- */
 static PyMethodDef _Tensor_instance_methods[] = {
     {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
+    {"_copy_from_numpy", (PyCFunction)_Tensor_copy_from_numpy, METH_VARARGS,
+     "Update the device buffer in place from a float32 numpy array"},
     {"_to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Export data to list"},
     {"_to_np", (PyCFunction)_Tensor_to_np, METH_VARARGS, "Copy to np array"},
     {NULL}};

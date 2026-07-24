@@ -243,6 +243,16 @@ class Tensor:
     def __itruediv__(self, other: BinaryOpType) -> Tensor:
         return self._inplace(other, _itruediv_scalar, _itruediv, self.__truediv__)
 
+    def copy_from_numpy(self, array: NDArray) -> None:
+        """Update this tensor's device buffer in place from ``array`` (cast to
+        float32) via a pinned, asynchronous host->device copy. The shape must
+        match. Useful for feeding a fresh batch into a fixed buffer, including
+        one captured by a CUDA graph."""
+        a = np.ascontiguousarray(array, dtype=np.float32)
+        if tuple(a.shape) != self.shape:
+            raise ValueError(f"shape mismatch: {a.shape} vs tensor {self.shape}")
+        self._core._copy_from_numpy(a)
+
     def to_np(self) -> NDArray:
         result = self._core._to_np()
         return result.reshape(self.shape)
