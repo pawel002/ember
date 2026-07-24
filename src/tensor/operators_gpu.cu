@@ -223,22 +223,37 @@ void transpose(const float *a, float *out, int n, int m)
     CUDA_POST_LAUNCH();
 }
 
+__inline__ __device__ float warp_reduce_sum(float v)
+{
+    for (int off = warpSize / 2; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
+    return v;
+}
+
 __global__ void k_sum_reduce(const float *a, float *out, int size)
 {
-    __shared__ float sdata[BLOCK_SIZE];
+    // Grid-stride load (multiple elements per thread), then a warp-shuffle
+    // reduction within each warp, one shared slot per warp, then the first
+    // warp reduces those and does a single atomicAdd per block.
     int tid = threadIdx.x;
     int stride = gridDim.x * blockDim.x;
 
     float v = 0.0f;
     for (int i = blockIdx.x * blockDim.x + tid; i < size; i += stride) v += a[i];
-    sdata[tid] = v;
+
+    v = warp_reduce_sum(v);
+
+    __shared__ float warp_sums[BLOCK_SIZE / 32];
+    int lane = tid & (warpSize - 1);
+    int wid = tid / warpSize;
+    if (lane == 0) warp_sums[wid] = v;
     __syncthreads();
 
-    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        __syncthreads();
+    if (wid == 0) {
+        int nwarps = blockDim.x / warpSize;
+        v = (lane < nwarps) ? warp_sums[lane] : 0.0f;
+        v = warp_reduce_sum(v);
+        if (lane == 0) atomicAdd(out, v);
     }
-    if (tid == 0) atomicAdd(out, sdata[0]);
 }
 
 float sum(const float *a, int size)
