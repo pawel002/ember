@@ -3,6 +3,7 @@ from ._tensor import (
     _adam_bias_update,
     _adam_step,
     _adam_step_dev,
+    _adam_step_group,
     _adamw_step,
     _adamw_step_dev,
     _add_broadcasted,
@@ -157,6 +158,7 @@ __all__ = [
     "_adam_bias_update",
     "_adam_step_dev",
     "_adamw_step_dev",
+    "_adam_step_group",
     "_from_numpy",
     # device / CUDA-graph control
     "_sync",

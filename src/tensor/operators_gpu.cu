@@ -405,6 +405,38 @@ void sgd_step(float *p, const float *g, float *v, int size, float lr, float mome
     CUDA_POST_LAUNCH();
 }
 
+/* ---- grouped (multi-tensor) Adam: one launch for all parameters ---- */
+__global__ void k_adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes,
+                                  float lr, float beta1, float mb1, float beta2, float mb2,
+                                  float eps, float bc1, float bc2)
+{
+    int pi = blockIdx.y;  // one grid row per parameter
+    int n = sizes[pi];
+    float *p = ps[pi];
+    const float *g = gs[pi];
+    float *m = ms[pi];
+    float *v = vs[pi];
+
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
+        float gi = g[i];
+        float mi = beta1 * m[i] + mb1 * gi;
+        float vi = beta2 * v[i] + mb2 * gi * gi;
+        m[i] = mi;
+        v[i] = vi;
+        p[i] -= lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
+    }
+}
+
+void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
+                     int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
+                     float eps, float bc1, float bc2)
+{
+    dim3 gdim(grid(max_size), nparams);
+    k_adam_step_group<<<gdim, BLOCK_SIZE, 0, ember_stream()>>>(ps, gs, ms, vs, sizes, lr, beta1,
+                                                               mb1, beta2, mb2, eps, bc1, bc2);
+    CUDA_POST_LAUNCH();
+}
+
 /* ---- capturable Adam/AdamW (on-device step counter + bias correction) ---- */
 __global__ void k_adam_bias(float *t, float *bc, float beta1, float beta2)
 {

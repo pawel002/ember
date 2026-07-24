@@ -568,6 +568,85 @@ static PyObject *_sgd_step(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
+/* Grouped Adam: one launch updates every parameter. Takes lists of the per-
+ * parameter tensors and builds the device pointer arrays for the kernel. */
+static PyObject *_adam_step_group(PyObject *module, PyObject *args)
+{
+    PyObject *pl, *gl, *ml, *vl;
+    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2;
+    if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffff", &PyList_Type, &pl, &PyList_Type, &gl,
+                          &PyList_Type, &ml, &PyList_Type, &vl, &lr, &beta1, &mb1, &beta2, &mb2,
+                          &eps, &bc1, &bc2))
+        return NULL;
+
+    int nparams = (int)PyList_Size(pl);
+    if (nparams == 0) Py_RETURN_NONE;
+    if ((int)PyList_Size(gl) != nparams || (int)PyList_Size(ml) != nparams ||
+        (int)PyList_Size(vl) != nparams) {
+        PyErr_SetString(PyExc_ValueError, "grouped optimizer: parameter list lengths differ");
+        return NULL;
+    }
+
+    float **hp = (float **)malloc(nparams * sizeof(float *));
+    float **hg = (float **)malloc(nparams * sizeof(float *));
+    float **hm = (float **)malloc(nparams * sizeof(float *));
+    float **hv = (float **)malloc(nparams * sizeof(float *));
+    int *hs = (int *)malloc(nparams * sizeof(int));
+    if (!hp || !hg || !hm || !hv || !hs) {
+        free(hp);
+        free(hg);
+        free(hm);
+        free(hv);
+        free(hs);
+        return PyErr_NoMemory();
+    }
+
+    int max_size = 0;
+    for (int i = 0; i < nparams; i++) {
+        _Tensor *pp = (_Tensor *)PyList_GetItem(pl, i);
+        _Tensor *gg = (_Tensor *)PyList_GetItem(gl, i);
+        _Tensor *mm = (_Tensor *)PyList_GetItem(ml, i);
+        _Tensor *vv = (_Tensor *)PyList_GetItem(vl, i);
+        hp[i] = (float *)pp->d_ptr;
+        hg[i] = (float *)gg->d_ptr;
+        hm[i] = (float *)mm->d_ptr;
+        hv[i] = (float *)vv->d_ptr;
+        hs[i] = pp->size;
+        if (pp->size > max_size) max_size = pp->size;
+    }
+
+    size_t pbytes = (size_t)nparams * sizeof(float *);
+    float **dp = (float **)alloc_memory(pbytes);
+    float **dg = (float **)alloc_memory(pbytes);
+    float **dm = (float **)alloc_memory(pbytes);
+    float **dv = (float **)alloc_memory(pbytes);
+    int *ds = (int *)alloc_memory((size_t)nparams * sizeof(int));
+
+    copy_to_device(dp, hp, pbytes);
+    copy_to_device(dg, hg, pbytes);
+    copy_to_device(dm, hm, pbytes);
+    copy_to_device(dv, hv, pbytes);
+    copy_to_device(ds, hs, (size_t)nparams * sizeof(int));
+
+    adam_step_group(dp, dg, dm, dv, ds, nparams, max_size, lr, beta1, mb1, beta2, mb2, eps, bc1,
+                    bc2);
+    // Ensure the kernel has consumed the pointer arrays before they return to
+    // the allocator pool.
+    sync_device();
+
+    free_memory(dp);
+    free_memory(dg);
+    free_memory(dm);
+    free_memory(dv);
+    free_memory(ds);
+    free(hp);
+    free(hg);
+    free(hm);
+    free(hv);
+    free(hs);
+    Py_RETURN_NONE;
+}
+
 /* ---- capturable Adam/AdamW (device-side step counter + bias correction) ---- */
 static PyObject *_adam_bias_update(PyObject *module, PyObject *args)
 {
@@ -683,6 +762,7 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_adam_step),
     OP_METHOD(_adamw_step),
     OP_METHOD(_sgd_step),
+    OP_METHOD(_adam_step_group),
     OP_METHOD(_adam_bias_update),
     OP_METHOD(_adam_step_dev),
     OP_METHOD(_adamw_step_dev),

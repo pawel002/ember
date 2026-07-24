@@ -57,6 +57,13 @@ void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, floa
                     float mb1, float beta2, float mb2, float eps, const float *bc,
                     float weight_decay);
 
+/* Grouped (multi-tensor) Adam: one launch updates all `nparams` parameters.
+ * ps/gs/ms/vs are arrays of per-parameter buffers and `sizes` their lengths
+ * (all device-resident on the GPU backend). max_size is the largest length. */
+void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
+                     int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
+                     float eps, float bc1, float bc2);
+
 #ifdef __cplusplus
 }
 #endif

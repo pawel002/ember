@@ -1,5 +1,10 @@
 import ember as em
-from ember._core import _adam_bias_update, _adam_step, _adam_step_dev
+from ember._core import (
+    _adam_bias_update,
+    _adam_step,
+    _adam_step_dev,
+    _adam_step_group,
+)
 from ember.tensor import Tensor
 
 from .base import Optimizer
@@ -12,6 +17,10 @@ class Adam(Optimizer):
     device, so a step captured into a CUDA graph advances them on every replay
     and stays numerically exact (at a small extra per-step cost). Leave it off
     for plain eager training.
+
+    With ``foreach=True`` all parameters are updated in a single grouped kernel
+    launch instead of one launch per parameter -- a win for models with many
+    parameters. (Mutually exclusive with ``capturable``.)
     """
 
     def __init__(
@@ -21,6 +30,7 @@ class Adam(Optimizer):
         betas: tuple[float, float] = (0.9, 0.999),
         eps: float = 1e-8,
         capturable: bool = False,
+        foreach: bool = False,
     ):
         self.parameters = parameters
         self.lr = lr
@@ -28,9 +38,15 @@ class Adam(Optimizer):
         self.eps = eps
         self.t = 0
         self.capturable = capturable
+        self.foreach = foreach and not capturable
 
         self.means = [em.random.zeros(p.shape) for p in self.parameters]
         self.variances = [em.random.zeros(p.shape) for p in self.parameters]
+
+        # cached _core lists for the grouped path (params/state are fixed)
+        self._p_cores = [p._core for p in self.parameters]
+        self._m_cores = [m._core for m in self.means]
+        self._v_cores = [v._core for v in self.variances]
 
         if capturable:
             # device-resident step counter (t) and bias corrections [bc1, bc2]
@@ -46,6 +62,26 @@ class Adam(Optimizer):
 
         mb1 = 1 - self.beta1
         mb2 = 1 - self.beta2
+
+        if self.foreach:
+            self.t += 1
+            bc1 = 1.0 / (1 - self.beta1**self.t)
+            bc2 = 1.0 / (1 - self.beta2**self.t)
+            _adam_step_group(
+                self._p_cores,
+                [g._core for g in gradients],
+                self._m_cores,
+                self._v_cores,
+                self.lr,
+                self.beta1,
+                mb1,
+                self.beta2,
+                mb2,
+                self.eps,
+                bc1,
+                bc2,
+            )
+            return
 
         if self.capturable:
             # Advance t and recompute bias corrections on-device (once per step),
