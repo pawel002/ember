@@ -78,6 +78,16 @@ void matmul_batched(const float *a, const float *b, float *out, int batch, int n
     }
 }
 
+void matmul_bias(const float *a, const float *b, const float *bias, float *out, int n, int m, int k)
+{
+    matmul(a, b, out, n, m, k);
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < m; j++) {
+            out[i * m + j] += bias[j];
+        }
+    }
+}
+
 void transpose(const float *a, float *out, int n, int m)
 {
     for (int i = 0; i < n; i++) {

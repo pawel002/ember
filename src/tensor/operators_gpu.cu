@@ -169,6 +169,19 @@ void matmul_batched(const float *a, const float *b, float *out, int batch, int n
                                              &beta, out, m, (long long)n * m, batch));
 }
 
+__global__ void k_bias_add_rows(float *out, const float *bias, int n, int m)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n * m) out[idx] += bias[idx % m];
+}
+
+void matmul_bias(const float *a, const float *b, const float *bias, float *out, int n, int m, int k)
+{
+    matmul(a, b, out, n, m, k);
+    k_bias_add_rows<<<grid(n * m), BLOCK_SIZE, 0, ember_stream()>>>(out, bias, n, m);
+    CUDA_POST_LAUNCH();
+}
+
 __global__ void k_transpose(const float *a, float *out, int n, int m)
 {
     int i = blockIdx.y * blockDim.y + threadIdx.y;

@@ -1,6 +1,7 @@
 import math
 
 import ember as em
+from ember._core import _matmul_bias
 from ember.tensor import Tensor
 
 from .base import Layer
@@ -44,7 +45,11 @@ class Linear(Layer):
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
         self.x = x
-        self.y = self.b + x @ self.w
+        n, in_f = x.shape
+        out_f = self.out_features
+        # Fused GEMM + bias epilogue in one call (no broadcast-add temporary).
+        core = _matmul_bias(x._core, self.w._core, self.b._core, n, out_f, in_f)
+        self.y = Tensor._from_core(core, (n, out_f), x.dtype)
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:

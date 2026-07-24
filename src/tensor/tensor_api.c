@@ -364,6 +364,36 @@ static PyObject *_matmul(PyObject *module, PyObject *args)
     return (PyObject *)result;
 }
 
+static PyObject *_matmul_bias(PyObject *module, PyObject *args)
+{
+    _Tensor *a, *b, *bias;
+    int n, m, k;
+
+    if (!PyArg_ParseTuple(args, "O!O!O!iii", &_TensorType, &a, &_TensorType, &b, &_TensorType,
+                          &bias, &n, &m, &k)) {
+        return NULL;
+    }
+
+    if (a->size != n * k) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d", a->size, n, k);
+        return NULL;
+    }
+    if (b->size != k * m) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch B: %d != %d x %d", b->size, k, m);
+        return NULL;
+    }
+    if (bias->size != m) {
+        PyErr_Format(PyExc_ValueError, "Shape mismatch bias: %d != %d", bias->size, m);
+        return NULL;
+    }
+
+    _Tensor *result = alloc_result(n * m);
+    if (!result) return NULL;
+
+    matmul_bias(a->d_ptr, b->d_ptr, bias->d_ptr, result->d_ptr, n, m, k);
+    return (PyObject *)result;
+}
+
 static PyObject *_matmul_batched(PyObject *module, PyObject *args)
 {
     _Tensor *a, *b;
@@ -567,6 +597,7 @@ static PyMethodDef module_methods[] = {
 
     /* non-element-wise operators */
     OP_METHOD(_matmul),
+    OP_METHOD(_matmul_bias),
     OP_METHOD(_matmul_batched),
     OP_METHOD(_transpose),
     OP_METHOD(_from_numpy),
