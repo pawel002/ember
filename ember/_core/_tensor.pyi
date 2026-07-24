@@ -117,6 +117,48 @@ def _sum(a: _Tensor) -> float: ...
 def _sum_axis(a: _Tensor, shape: tuple[int, ...], axis: int) -> _Tensor: ...
 def _max_axis(a: _Tensor, shape: tuple[int, ...], axis: int) -> _Tensor: ...
 
+# transformer building blocks
+def _softmax_fwd(a: _Tensor, shape: tuple[int, ...], axis: int) -> _Tensor: ...
+def _softmax_bwd(
+    dout: _Tensor, y: _Tensor, shape: tuple[int, ...], axis: int
+) -> _Tensor: ...
+def _softmax_rows(a: _Tensor, rows: int, d: int) -> _Tensor: ...
+def _softmax_rows_causal(a: _Tensor, rows: int, d: int, sq: int) -> _Tensor: ...
+
+# LayerNorm: forward returns (out, mean, rstd); backward returns (dx, dgamma, dbeta)
+def _layernorm_fwd(
+    x: _Tensor, gamma: _Tensor, beta: _Tensor, n: int, d: int, eps: float
+) -> tuple[_Tensor, _Tensor, _Tensor]: ...
+def _layernorm_bwd(
+    dout: _Tensor,
+    x: _Tensor,
+    gamma: _Tensor,
+    mean: _Tensor,
+    rstd: _Tensor,
+    n: int,
+    d: int,
+) -> tuple[_Tensor, _Tensor, _Tensor]: ...
+
+# (0,1,2,3) -> (0,2,1,3) permutation (multi-head split and its inverse)
+def _permute_0213(a: _Tensor, d0: int, d1: int, d2: int, d3: int) -> _Tensor: ...
+
+# batched row-major GEMM: C = alpha * opA(A) @ opB(B) per batch
+def _bmm(
+    a: _Tensor,
+    b: _Tensor,
+    batch: int,
+    n: int,
+    m: int,
+    k: int,
+    trans_a: int,
+    trans_b: int,
+    alpha: float,
+) -> _Tensor: ...
+
+# embedding lookup: idx is a C-contiguous int32 numpy array
+def _embedding_fwd(weight: _Tensor, idx: NDArray, dim: int) -> _Tensor: ...
+def _embedding_bwd(dout: _Tensor, idx: NDArray, vocab: int, dim: int) -> _Tensor: ...
+
 # fused optimizer steps (mutate p, m, v in place)
 def _adam_step(
     p: _Tensor,

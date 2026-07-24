@@ -52,6 +52,7 @@ from ember._core import (
     _rtruediv_scalar,
     _sin,
     _sinh,
+    _softmax_fwd,
     _sqrt,
     _sub_broadcasted,
     _sub_scalar,
@@ -460,13 +461,15 @@ def amax(a: Tensor, axis: int, keepdims: bool = False) -> Tensor:
 
 
 def softmax(a: Tensor, axis: int = -1) -> Tensor:
-    """Numerically-stable softmax along ``axis``."""
+    """Numerically-stable softmax along ``axis``.
+
+    A single fused kernel does the stable max -> exp -> sum -> divide (replacing
+    the earlier 4-op composition and its temporaries)."""
     assert_tensor_unary(a, "softmax()")
 
     axis = _normalize_axis(a, axis)
-    shifted = a - amax(a, axis=axis, keepdims=True)
-    e = exp(shifted)
-    return e / sum(e, axis=axis, keepdims=True)
+    core = _softmax_fwd(a._core, a.shape, axis)
+    return Tensor._from_core(core, a.shape, a.dtype)
 
 
 # verifiers

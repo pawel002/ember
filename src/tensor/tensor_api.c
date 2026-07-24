@@ -6,6 +6,7 @@
 #include "../core/tensor_types.h"
 #include "operators.h"
 #include "tensor_helpers.h"
+#include "transformer.h"
 
 #define OP_METHOD(NAME) {#NAME, (PyCFunction)NAME, METH_VARARGS, "Element-wise " #NAME " operation"}
 
@@ -727,6 +728,12 @@ static PyObject *_graph_destroy(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
+/* Transformer building-block bindings (softmax / layernorm / attention / heads
+ * permute / batched GEMM / embedding). Included here so they share this
+ * module's CUDA stream + caching allocator; uses alloc_result and _TensorType
+ * defined above. */
+#include "transformer_api.inc"
+
 /* ---- type & module definitions ---- */
 static PyMethodDef _Tensor_instance_methods[] = {
     {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
@@ -766,6 +773,9 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_adam_bias_update),
     OP_METHOD(_adam_step_dev),
     OP_METHOD(_adamw_step_dev),
+
+    /* transformer building blocks */
+    EMBER_TRANSFORMER_METHODS
 
     // device / CUDA-graph control
     {"_sync", (PyCFunction)_sync, METH_VARARGS, "Synchronize the device"},

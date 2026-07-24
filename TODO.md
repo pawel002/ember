@@ -11,6 +11,8 @@
 ## Next: functionality
 - Autograd (tape-based) to remove the hand-written layer/loss backward passes.
 - Broaden dtype support (backend is float32-only today).
-- More layers (Conv, LayerNorm, Embedding) and a data-loading path.
+- Fused flash-attention kernel (current path is batched GEMM + fused softmax,
+  which materializes the S×S scores); cross-attention (separate q / kv inputs).
+- More layers (Conv) and a data-loading path.
 - Benchmarks in CI (regression guard) and binary wheels (cibuildwheel) for the
   CPU build.

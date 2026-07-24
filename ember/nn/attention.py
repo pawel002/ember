@@ -1,0 +1,136 @@
+import math
+
+from ember._core import _softmax_bwd, _softmax_rows, _softmax_rows_causal
+from ember.tensor import Tensor
+
+from ._functional import bmm, permute_0213, view
+from .base import Layer
+from .layers import Linear
+
+
+class MultiHeadAttention(Layer):
+    """Multi-head self-attention.
+
+    Splits the model dimension ``embed_dim`` into ``num_heads`` heads of size
+    ``head_dim = embed_dim / num_heads`` and computes, per head,
+
+        Attention(Q, K, V) = softmax(Q K^T / sqrt(head_dim)) V
+
+    Input and output are ``(batch, seq, embed_dim)``. The Q/K/V/output
+    projections are plain :class:`Linear` layers (fused GEMM+bias); the two
+    attention matmuls use the batched GEMM primitive with the ``1/sqrt(head_dim)``
+    scale folded into the Q@K^T call; and the row-softmax is a fused kernel with
+    the causal mask folded in when ``causal=True`` (each query attends only to
+    keys at or before its own position -- decoder / GPT-style masking).
+    """
+
+    def __init__(self, embed_dim: int, num_heads: int, causal: bool = False):
+        assert embed_dim % num_heads == 0, "embed_dim must be divisible by num_heads"
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.scale = 1.0 / math.sqrt(self.head_dim)
+        self.causal = causal
+        self.reset()
+
+    def reset(self):
+        self.x = None
+        self.y = None
+        # projections
+        self.wq = Linear(self.embed_dim, self.embed_dim)
+        self.wk = Linear(self.embed_dim, self.embed_dim)
+        self.wv = Linear(self.embed_dim, self.embed_dim)
+        self.wo = Linear(self.embed_dim, self.embed_dim)
+        # cached activations for backward
+        self._qh = self._kh = self._vh = self._p = None
+        self._shape: tuple[int, int, int] | None = None
+
+    def parameters(self) -> list[Tensor]:
+        out: list[Tensor] = []
+        for proj in (self.wq, self.wk, self.wv, self.wo):
+            out.extend(proj.parameters())
+        return out
+
+    def gradients(self) -> list[Tensor | None]:
+        out: list[Tensor | None] = []
+        for proj in (self.wq, self.wk, self.wv, self.wo):
+            out.extend(proj.gradients())
+        return out
+
+    def _to_heads(self, t: Tensor, B: int, S: int) -> Tensor:
+        # (B*S, E) -> (B, S, H, dh) -> (B, H, S, dh) == (B*H, S, dh)
+        h = view(t, (B, S, self.num_heads, self.head_dim))
+        h = permute_0213(h, B, S, self.num_heads, self.head_dim)
+        return view(h, (B * self.num_heads, S, self.head_dim))
+
+    def _from_heads(self, t: Tensor, B: int, S: int) -> Tensor:
+        # (B*H, S, dh) -> (B, H, S, dh) -> (B, S, H, dh) -> (B*S, E)
+        h = view(t, (B, self.num_heads, S, self.head_dim))
+        h = permute_0213(h, B, self.num_heads, S, self.head_dim)
+        return view(h, (B * S, self.embed_dim))
+
+    def forward(self, x: Tensor, training: bool) -> Tensor:
+        self.x = x
+        B, S, E = x.shape
+        H, dh = self.num_heads, self.head_dim
+        BH = B * H
+        self._shape = (B, S, E)
+
+        x2 = view(x, (B * S, E))
+        q = self.wq(x2, training)
+        k = self.wk(x2, training)
+        v = self.wv(x2, training)
+
+        qh = self._to_heads(q, B, S)
+        kh = self._to_heads(k, B, S)
+        vh = self._to_heads(v, B, S)
+
+        # scores = scale * Q @ K^T  ->  (B*H, S, S)
+        scores = bmm(
+            qh, kh, BH, S, S, dh, trans_a=False, trans_b=True, alpha=self.scale
+        )
+
+        # row softmax over the key axis (fused; causal mask folded in)
+        if self.causal:
+            p_core = _softmax_rows_causal(scores._core, BH * S, S, S)
+        else:
+            p_core = _softmax_rows(scores._core, BH * S, S)
+        p = Tensor._from_core(p_core, (BH, S, S), x.dtype)
+
+        # O = P @ V  ->  (B*H, S, dh)
+        o = bmm(p, vh, BH, S, dh, S)
+
+        self._qh, self._kh, self._vh, self._p = qh, kh, vh, p
+
+        out2 = self.wo(self._from_heads(o, B, S), training)  # (B*S, E)
+        self.y = view(out2, (B, S, E))
+        return self.y
+
+    def backward(self, grad_y: Tensor) -> Tensor:
+        assert self._shape is not None, "forward() must run before backward()"
+        B, S, E = self._shape
+        H, dh = self.num_heads, self.head_dim
+        BH = B * H
+
+        g2 = view(grad_y, (B * S, E))
+        do2 = self.wo.backward(g2)  # dL/d(concat heads), (B*S, E)
+        do = self._to_heads(do2, B, S)  # (B*H, S, dh)
+
+        # dP = dO @ V^T ; dV = P^T @ dO
+        dp = bmm(do, self._vh, BH, S, S, dh, trans_a=False, trans_b=True)
+        dv = bmm(self._p, do, BH, S, dh, S, trans_a=True, trans_b=False)
+
+        # softmax backward over the key axis (P zeros make causal grads vanish)
+        dscores_core = _softmax_bwd(dp._core, self._p._core, (BH * S, S), 1)
+        dscores = Tensor._from_core(dscores_core, (BH, S, S), grad_y.dtype)
+
+        # dQ = scale * dScores @ K ; dK = scale * dScores^T @ Q
+        dq = bmm(dscores, self._kh, BH, S, dh, S, alpha=self.scale)
+        dk = bmm(dscores, self._qh, BH, S, dh, S, trans_a=True, alpha=self.scale)
+
+        dxq = self.wq.backward(self._from_heads(dq, B, S))
+        dxk = self.wk.backward(self._from_heads(dk, B, S))
+        dxv = self.wv.backward(self._from_heads(dv, B, S))
+
+        dx2 = dxq + dxk + dxv
+        return view(dx2, (B, S, E))

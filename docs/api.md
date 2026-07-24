@@ -240,6 +240,56 @@ Gaussian Error Linear Unit (using `tanh` approximation).
 
 - **Equation:** $f(x) \approx 0.5 x (1 + \tanh(0.8 x))$
 
+### Transformer layers
+
+Building blocks for attention models. Each is backed by fused CUDA kernels
+(LayerNorm, softmax and the causal mask are single kernels; the attention
+matmuls use a batched cuBLAS GEMM with the `1/sqrt(head_dim)` scale folded in).
+They share the `Layer` interface, so they compose with `Sequential`, the
+optimizers and the losses like any other layer.
+
+#### `ember.nn.LayerNorm(dim, eps=1e-5)`
+Layer normalization over the last dimension, with learned scale/shift:
+$y = \gamma \, (x - \mu) / \sqrt{\sigma^2 + \epsilon} + \beta$. Accepts any shape
+whose last axis is `dim`. `parameters()` returns `[gamma, beta]`.
+
+#### `ember.nn.Embedding(num_embeddings, embedding_dim)`
+A lookup table. `forward(idx)` takes an integer index array (NumPy array or
+nested list, any shape) and returns `(*idx.shape, embedding_dim)`. `backward`
+scatter-adds gradients into the used rows and returns `None` (integer inputs
+have no gradient); `parameters()` returns `[weight]`.
+
+#### `ember.nn.MultiHeadAttention(embed_dim, num_heads, causal=False)`
+Multi-head self-attention on `(batch, seq, embed_dim)` inputs:
+$\mathrm{softmax}(QK^\top / \sqrt{d_h})V$ per head. With `causal=True` each query
+attends only to keys at or before its position (decoder / GPT-style masking).
+The four projections are `Linear` layers; `parameters()` aggregates all of them.
+
+#### `ember.nn.FeedForward(dim, hidden=None, activation="gelu")`
+Position-wise MLP: `Linear(dim, hidden) -> activation -> Linear(hidden, dim)`.
+`hidden` defaults to `4 * dim`. `activation` is `"gelu"` or `"relu"`.
+
+#### `ember.nn.PositionalEncoding(dim, max_len=5000)`
+Fixed sinusoidal positional encoding added to a `(batch, seq, dim)` input. No
+learnable parameters.
+
+#### `ember.nn.TransformerEncoderLayer(embed_dim, num_heads, ff_hidden=None, causal=False, activation="gelu")`
+One pre-norm block: `h = x + Attn(LayerNorm(x))`, then
+`out = h + FeedForward(LayerNorm(h))`.
+
+#### `ember.nn.TransformerEncoder(num_layers, embed_dim, num_heads, ff_hidden=None, causal=False, activation="gelu", final_norm=True)`
+A stack of `TransformerEncoderLayer` blocks with an optional final `LayerNorm`.
+
+```python
+import ember.nn as nn
+
+encoder = nn.TransformerEncoder(
+    num_layers=4, embed_dim=128, num_heads=8, causal=True
+)
+y = encoder(x, training=True)      # x: (batch, seq, 128)
+dx = encoder.backward(grad_y)
+```
+
 ---
 
 ## Optimizers (`ember.optim`)
