@@ -188,3 +188,38 @@ void sgd_step(float *p, const float *g, float *v, int size, float lr, float mome
         p[i] -= lr * vi;
     }
 }
+
+void adam_bias_update(float *t, float *bc, float beta1, float beta2)
+{
+    float tt = t[0] + 1.0f;
+    t[0] = tt;
+    bc[0] = 1.0f / (1.0f - powf(beta1, tt));
+    bc[1] = 1.0f / (1.0f - powf(beta2, tt));
+}
+
+void adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                   float mb1, float beta2, float mb2, float eps, const float *bc)
+{
+    for (int i = 0; i < size; i++) {
+        float gi = g[i];
+        float mi = beta1 * m[i] + mb1 * gi;
+        float vi = beta2 * v[i] + mb2 * gi * gi;
+        m[i] = mi;
+        v[i] = vi;
+        p[i] -= lr * (mi * bc[0]) / (sqrtf(vi * bc[1]) + eps);
+    }
+}
+
+void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                    float mb1, float beta2, float mb2, float eps, const float *bc,
+                    float weight_decay)
+{
+    for (int i = 0; i < size; i++) {
+        float gi = g[i];
+        float mi = beta1 * m[i] + mb1 * gi;
+        float vi = beta2 * v[i] + mb2 * gi * gi;
+        m[i] = mi;
+        v[i] = vi;
+        p[i] = p[i] * (1.0f - lr * weight_decay) - lr * (mi * bc[0]) / (sqrtf(vi * bc[1]) + eps);
+    }
+}

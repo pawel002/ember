@@ -568,6 +568,46 @@ static PyObject *_sgd_step(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
+/* ---- capturable Adam/AdamW (device-side step counter + bias correction) ---- */
+static PyObject *_adam_bias_update(PyObject *module, PyObject *args)
+{
+    _Tensor *t, *bc;
+    float beta1, beta2;
+    if (!PyArg_ParseTuple(args, "O!O!ff", &_TensorType, &t, &_TensorType, &bc, &beta1, &beta2))
+        return NULL;
+
+    adam_bias_update(t->d_ptr, bc->d_ptr, beta1, beta2);
+    Py_RETURN_NONE;
+}
+
+static PyObject *_adam_step_dev(PyObject *module, PyObject *args)
+{
+    _Tensor *p, *g, *m, *v, *bc;
+    float lr, beta1, mb1, beta2, mb2, eps;
+    if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffO!", &_TensorType, &p, &_TensorType, &g,
+                          &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
+                          &_TensorType, &bc))
+        return NULL;
+
+    adam_step_dev(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
+                  bc->d_ptr);
+    Py_RETURN_NONE;
+}
+
+static PyObject *_adamw_step_dev(PyObject *module, PyObject *args)
+{
+    _Tensor *p, *g, *m, *v, *bc;
+    float lr, beta1, mb1, beta2, mb2, eps, weight_decay;
+    if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffO!f", &_TensorType, &p, &_TensorType, &g,
+                          &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
+                          &_TensorType, &bc, &weight_decay))
+        return NULL;
+
+    adamw_step_dev(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
+                   bc->d_ptr, weight_decay);
+    Py_RETURN_NONE;
+}
+
 /* ---- device / CUDA-graph control ---- */
 static PyObject *_sync(PyObject *module, PyObject *args)
 {
@@ -643,6 +683,9 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_adam_step),
     OP_METHOD(_adamw_step),
     OP_METHOD(_sgd_step),
+    OP_METHOD(_adam_bias_update),
+    OP_METHOD(_adam_step_dev),
+    OP_METHOD(_adamw_step_dev),
 
     // device / CUDA-graph control
     {"_sync", (PyCFunction)_sync, METH_VARARGS, "Synchronize the device"},

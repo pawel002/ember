@@ -151,6 +151,36 @@ def _sgd_step(
     p: _Tensor, g: _Tensor, v: _Tensor, lr: float, momentum: float
 ) -> None: ...
 
+# capturable Adam/AdamW: device-side step counter (t) and bias corrections (bc)
+def _adam_bias_update(t: _Tensor, bc: _Tensor, beta1: float, beta2: float) -> None: ...
+def _adam_step_dev(
+    p: _Tensor,
+    g: _Tensor,
+    m: _Tensor,
+    v: _Tensor,
+    lr: float,
+    beta1: float,
+    mb1: float,
+    beta2: float,
+    mb2: float,
+    eps: float,
+    bc: _Tensor,
+) -> None: ...
+def _adamw_step_dev(
+    p: _Tensor,
+    g: _Tensor,
+    m: _Tensor,
+    v: _Tensor,
+    lr: float,
+    beta1: float,
+    mb1: float,
+    beta2: float,
+    mb2: float,
+    eps: float,
+    bc: _Tensor,
+    weight_decay: float,
+) -> None: ...
+
 # device / CUDA-graph control
 def _sync() -> None: ...
 def _empty_cache() -> None: ...

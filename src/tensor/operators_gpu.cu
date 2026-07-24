@@ -404,4 +404,64 @@ void sgd_step(float *p, const float *g, float *v, int size, float lr, float mome
     k_sgd_step<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(p, g, v, size, lr, momentum);
     CUDA_POST_LAUNCH();
 }
+
+/* ---- capturable Adam/AdamW (on-device step counter + bias correction) ---- */
+__global__ void k_adam_bias(float *t, float *bc, float beta1, float beta2)
+{
+    float tt = t[0] + 1.0f;
+    t[0] = tt;
+    bc[0] = 1.0f / (1.0f - powf(beta1, tt));
+    bc[1] = 1.0f / (1.0f - powf(beta2, tt));
+}
+
+void adam_bias_update(float *t, float *bc, float beta1, float beta2)
+{
+    k_adam_bias<<<1, 1, 0, ember_stream()>>>(t, bc, beta1, beta2);
+    CUDA_POST_LAUNCH();
+}
+
+__global__ void k_adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr,
+                                float beta1, float mb1, float beta2, float mb2, float eps,
+                                const float *bc)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= size) return;
+    float gi = g[i];
+    float mi = beta1 * m[i] + mb1 * gi;
+    float vi = beta2 * v[i] + mb2 * gi * gi;
+    m[i] = mi;
+    v[i] = vi;
+    p[i] -= lr * (mi * bc[0]) / (sqrtf(vi * bc[1]) + eps);
+}
+
+void adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                   float mb1, float beta2, float mb2, float eps, const float *bc)
+{
+    k_adam_step_dev<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(p, g, m, v, size, lr, beta1, mb1,
+                                                                   beta2, mb2, eps, bc);
+    CUDA_POST_LAUNCH();
+}
+
+__global__ void k_adamw_step_dev(float *p, const float *g, float *m, float *v, int size, float lr,
+                                 float beta1, float mb1, float beta2, float mb2, float eps,
+                                 const float *bc, float weight_decay)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= size) return;
+    float gi = g[i];
+    float mi = beta1 * m[i] + mb1 * gi;
+    float vi = beta2 * v[i] + mb2 * gi * gi;
+    m[i] = mi;
+    v[i] = vi;
+    p[i] = p[i] * (1.0f - lr * weight_decay) - lr * (mi * bc[0]) / (sqrtf(vi * bc[1]) + eps);
+}
+
+void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                    float mb1, float beta2, float mb2, float eps, const float *bc,
+                    float weight_decay)
+{
+    k_adamw_step_dev<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(
+        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc, weight_decay);
+    CUDA_POST_LAUNCH();
+}
 }

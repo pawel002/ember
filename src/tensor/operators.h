@@ -46,6 +46,17 @@ void adamw_step(float *p, const float *g, float *m, float *v, int size, float lr
                 float weight_decay);
 void sgd_step(float *p, const float *g, float *v, int size, float lr, float momentum);
 
+/* Capturable Adam/AdamW: the step counter lives on-device (t, a length-1
+ * buffer) and the bias corrections (bc, length-2: [bc1, bc2]) are computed
+ * on-device, so a captured graph advances t on every replay and stays exact.
+ * Call adam_bias_update once per step, then *_step_dev per parameter. */
+void adam_bias_update(float *t, float *bc, float beta1, float beta2);
+void adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                   float mb1, float beta2, float mb2, float eps, const float *bc);
+void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                    float mb1, float beta2, float mb2, float eps, const float *bc,
+                    float weight_decay);
+
 #ifdef __cplusplus
 }
 #endif
