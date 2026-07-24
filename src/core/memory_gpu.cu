@@ -27,7 +27,18 @@ namespace
 {
 std::unordered_map<size_t, std::vector<void *>> g_free_lists;
 std::unordered_map<void *, size_t> g_block_size;
+cudaStream_t g_stream = NULL;
 }  // namespace
+
+// All ember GPU work runs on this dedicated stream (created lazily) so that the
+// training step can be captured into a CUDA graph.
+cudaStream_t ember_stream(void)
+{
+    if (!g_stream) {
+        GPU_ERR_CHK(cudaStreamCreate(&g_stream));
+    }
+    return g_stream;
+}
 
 extern "C" {
 
@@ -82,16 +93,48 @@ void empty_device_cache(void)
 
 void copy_to_device(void *dst_device, const void *src_host, size_t bytes)
 {
+    // Synchronous copy: it completes before any subsequently-launched kernel on
+    // the ember stream runs, so no explicit ordering is needed.
     GPU_ERR_CHK(cudaMemcpy(dst_device, src_host, bytes, cudaMemcpyHostToDevice));
 }
 
 void copy_from_device(void *dst_host, const void *src_device, size_t bytes)
 {
+    // Wait for pending kernels on the ember stream before reading back.
+    GPU_ERR_CHK(cudaStreamSynchronize(ember_stream()));
     GPU_ERR_CHK(cudaMemcpy(dst_host, src_device, bytes, cudaMemcpyDeviceToHost));
+}
+
+void begin_capture(void)
+{
+    GPU_ERR_CHK(cudaStreamBeginCapture(ember_stream(), cudaStreamCaptureModeThreadLocal));
+}
+
+void *end_capture(void)
+{
+    cudaGraph_t graph;
+    GPU_ERR_CHK(cudaStreamEndCapture(ember_stream(), &graph));
+
+    cudaGraphExec_t exec;
+    GPU_ERR_CHK(cudaGraphInstantiate(&exec, graph, NULL, NULL, 0));
+    GPU_ERR_CHK(cudaGraphDestroy(graph));
+    return (void *)exec;
+}
+
+void graph_launch(void *exec)
+{
+    // Asynchronous: consecutive replays are ordered on the ember stream. Call
+    // sync_device() when you need the results on the host.
+    GPU_ERR_CHK(cudaGraphLaunch((cudaGraphExec_t)exec, ember_stream()));
+}
+
+void graph_destroy(void *exec)
+{
+    if (exec) GPU_ERR_CHK(cudaGraphExecDestroy((cudaGraphExec_t)exec));
 }
 
 void sync_device()
 {
-    GPU_ERR_CHK(cudaDeviceSynchronize());
+    GPU_ERR_CHK(cudaStreamSynchronize(ember_stream()));
 }
 }

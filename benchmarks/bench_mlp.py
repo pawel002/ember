@@ -58,7 +58,7 @@ def _hidden_sizes(cfg: Config) -> list[tuple[int, int]]:
 # --------------------------------------------------------------------------- #
 # ember
 # --------------------------------------------------------------------------- #
-def bench_ember(cfg: Config, x_np, y_np) -> float:
+def bench_ember(cfg: Config, x_np, y_np, opt_name="adam", use_graph=False) -> float:
     import ember as em
     import ember.loss as loss
     import ember.nn as nn
@@ -71,7 +71,10 @@ def bench_ember(cfg: Config, x_np, y_np) -> float:
         if i < cfg.depth - 1:
             layers.append(nn.ReLU())
     model = nn.Sequential(*layers)
-    opt = optim.Adam(model.parameters(), lr=1e-3)
+    if opt_name == "sgd":
+        opt = optim.SGD(model.parameters(), lr=1e-3, momentum=0.9)
+    else:
+        opt = optim.Adam(model.parameters(), lr=1e-3)
     criterion = loss.MSELoss()
 
     x = em.Tensor(x_np)
@@ -85,15 +88,24 @@ def bench_ember(cfg: Config, x_np, y_np) -> float:
         model.backward(criterion.gradient(pred, target))
         opt.apply(model.gradients())
 
+    if use_graph:
+        graph = em.cuda.capture(step, warmup=cfg.warmup)
+        em.cuda.sync()
+        t0 = time.perf_counter()
+        for _ in range(cfg.iters):
+            graph.replay()
+        em.cuda.sync()
+        t1 = time.perf_counter()
+        return cfg.iters / (t1 - t0)
+
     for _ in range(cfg.warmup):
         step()
-    # force completion of queued GPU work
-    model.parameters()[0].to_np()
+    em.cuda.sync()
 
     t0 = time.perf_counter()
     for _ in range(cfg.iters):
         step()
-    model.parameters()[0].to_np()  # sync
+    em.cuda.sync()
     t1 = time.perf_counter()
 
     return cfg.iters / (t1 - t0)
@@ -102,7 +114,7 @@ def bench_ember(cfg: Config, x_np, y_np) -> float:
 # --------------------------------------------------------------------------- #
 # torch (eager)
 # --------------------------------------------------------------------------- #
-def bench_torch(cfg: Config, x_np, y_np) -> float:
+def bench_torch(cfg: Config, x_np, y_np, opt_name="adam") -> float:
     import torch
     import torch.nn as tnn
     import torch.nn.functional as F
@@ -117,7 +129,10 @@ def bench_torch(cfg: Config, x_np, y_np) -> float:
         if i < cfg.depth - 1:
             layers.append(tnn.ReLU())
     model = tnn.Sequential(*layers).to(dev)
-    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+    if opt_name == "sgd":
+        opt = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.9)
+    else:
+        opt = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     x = torch.from_numpy(x_np).to(dev)
     target = torch.from_numpy(y_np).to(dev)
@@ -143,6 +158,8 @@ def bench_torch(cfg: Config, x_np, y_np) -> float:
 
 
 def main() -> int:
+    # Table 1: apples-to-apples eager training, same optimizer (Adam).
+    print("== eager, Adam (ember vs torch) ==")
     print(
         f"{'config':>8} | {'ember (it/s)':>13} | {'torch (it/s)':>13} | {'speedup':>8}"
     )
@@ -159,9 +176,26 @@ def main() -> int:
         print(
             f"{cfg.name:>8} | {em_ips:13.0f} | {th_ips:13.0f} | {speedup:7.2f}x {flag}"
         )
-
     print("-" * 54)
-    print(f"worst-case ember/torch speedup: {worst:.2f}x")
+    print(f"worst-case ember/torch speedup (eager Adam): {worst:.2f}x\n")
+
+    # Table 2: CUDA-graph capture (SGD, which is exact under capture).
+    print("== +CUDA graph, SGD (ember eager / ember graph / torch eager) ==")
+    print(
+        f"{'config':>8} | {'em-eager':>10} | {'em-graph':>10} | "
+        f"{'torch':>10} | {'graph/torch':>11}"
+    )
+    print("-" * 62)
+    for cfg in CONFIGS:
+        x_np, y_np = make_data(cfg)
+        em_eager = bench_ember(cfg, x_np, y_np, opt_name="sgd", use_graph=False)
+        em_graph = bench_ember(cfg, x_np, y_np, opt_name="sgd", use_graph=True)
+        th = bench_torch(cfg, x_np, y_np, opt_name="sgd")
+        print(
+            f"{cfg.name:>8} | {em_eager:10.0f} | {em_graph:10.0f} | "
+            f"{th:10.0f} | {em_graph / th:10.2f}x"
+        )
+
     return 0 if worst >= 1.0 else 1
 
 

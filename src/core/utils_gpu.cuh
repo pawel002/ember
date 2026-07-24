@@ -33,4 +33,9 @@ inline void cublasAssert(cublasStatus_t code, const char *file, int line)
 }
 #endif
 
+// The single CUDA stream all ember GPU work runs on. Using a dedicated
+// (non-default) stream is what makes the training step capturable into a CUDA
+// graph. Defined in memory_gpu.cu.
+cudaStream_t ember_stream(void);
+
 #endif

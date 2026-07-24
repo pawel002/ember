@@ -32,3 +32,18 @@ void copy_from_device(void *dst_host, const void *src_device, size_t bytes)
 }
 
 void sync_device() {}
+
+// CUDA-graph capture is a no-op on the CPU backend.
+void begin_capture(void) {}
+void *end_capture(void)
+{
+    return NULL;
+}
+void graph_launch(void *exec)
+{
+    (void)exec;
+}
+void graph_destroy(void *exec)
+{
+    (void)exec;
+}

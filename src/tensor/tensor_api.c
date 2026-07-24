@@ -490,6 +490,46 @@ static PyObject *_sgd_step(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
+/* ---- device / CUDA-graph control ---- */
+static PyObject *_sync(PyObject *module, PyObject *args)
+{
+    sync_device();
+    Py_RETURN_NONE;
+}
+
+static PyObject *_empty_cache(PyObject *module, PyObject *args)
+{
+    empty_device_cache();
+    Py_RETURN_NONE;
+}
+
+static PyObject *_begin_capture(PyObject *module, PyObject *args)
+{
+    begin_capture();
+    Py_RETURN_NONE;
+}
+
+static PyObject *_end_capture(PyObject *module, PyObject *args)
+{
+    return PyLong_FromVoidPtr(end_capture());
+}
+
+static PyObject *_graph_launch(PyObject *module, PyObject *args)
+{
+    PyObject *handle;
+    if (!PyArg_ParseTuple(args, "O", &handle)) return NULL;
+    graph_launch(PyLong_AsVoidPtr(handle));
+    Py_RETURN_NONE;
+}
+
+static PyObject *_graph_destroy(PyObject *module, PyObject *args)
+{
+    PyObject *handle;
+    if (!PyArg_ParseTuple(args, "O", &handle)) return NULL;
+    graph_destroy(PyLong_AsVoidPtr(handle));
+    Py_RETURN_NONE;
+}
+
 /* ---- type & module definitions ---- */
 static PyMethodDef _Tensor_instance_methods[] = {
     {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
@@ -521,6 +561,14 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_adam_step),
     OP_METHOD(_adamw_step),
     OP_METHOD(_sgd_step),
+
+    // device / CUDA-graph control
+    {"_sync", (PyCFunction)_sync, METH_VARARGS, "Synchronize the device"},
+    {"_empty_cache", (PyCFunction)_empty_cache, METH_VARARGS, "Release the cached device pool"},
+    {"_begin_capture", (PyCFunction)_begin_capture, METH_VARARGS, "Begin CUDA-graph capture"},
+    {"_end_capture", (PyCFunction)_end_capture, METH_VARARGS, "End capture; return graph handle"},
+    {"_graph_launch", (PyCFunction)_graph_launch, METH_VARARGS, "Replay a captured graph"},
+    {"_graph_destroy", (PyCFunction)_graph_destroy, METH_VARARGS, "Destroy a captured graph"},
 
     {NULL}};
 
