@@ -9,6 +9,7 @@ extern "C" {
 
 void *alloc_memory(size_t bytes);
 void free_memory(void *ptr);
+void empty_device_cache(void);
 void copy_to_device(void *dst_device, const void *src_host, size_t bytes);
 void copy_from_device(void *dst_host, const void *src_device, size_t bytes);
 void sync_device();
