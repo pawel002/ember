@@ -79,8 +79,10 @@ def bench_ember(cfg: Config, x_np, y_np) -> float:
 
     def step():
         pred = model(x, training=True)
-        criterion(pred, target)
-        model.backward(criterion.backward())
+        # gradient() computes dL/dpred without materializing the scalar loss,
+        # so there is no device-to-host sync in the hot loop (matching torch,
+        # which does not call loss.item() here either).
+        model.backward(criterion.gradient(pred, target))
         opt.apply(model.gradients())
 
     for _ in range(cfg.warmup):

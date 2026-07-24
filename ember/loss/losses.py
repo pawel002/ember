@@ -25,6 +25,12 @@ class MSELoss(Loss):
         assert self.diff is not None, "forward() must run before backward()"
         return (2.0 / self.n) * self.diff
 
+    def gradient(self, pred: Tensor, target: Tensor) -> Tensor:
+        # No scalar reduction => no device-to-host sync.
+        self.diff = pred - target
+        self.n = math.prod(pred.shape)
+        return (2.0 / self.n) * self.diff
+
 
 class CrossEntropyLoss(Loss):
     """Softmax cross-entropy for classification, averaged over the batch.
@@ -53,4 +59,11 @@ class CrossEntropyLoss(Loss):
     def backward(self) -> Tensor:
         assert self.probs is not None, "forward() must run before backward()"
         assert self.target is not None, "forward() must run before backward()"
+        return (self.probs - self.target) / self.n
+
+    def gradient(self, pred: Tensor, target: Tensor) -> Tensor:
+        # softmax(pred) - target, all on-device (no scalar reduction/sync).
+        self.n = pred.shape[0]
+        self.target = target
+        self.probs = em.softmax(pred, axis=-1)
         return (self.probs - self.target) / self.n

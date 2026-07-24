@@ -69,41 +69,49 @@ static cublasHandle_t cublas_handle(void)
         CUDA_POST_LAUNCH();                                                 \
     }
 
-#define EMBER_BROADCAST_OP(name, expr)                                                            \
-    __global__ void k_##name##_broadcasted(const float *a, const float *b, float *out,            \
-                                           const int *shape, const int *strides_a,                \
-                                           const int *strides_b, int ndim, int total)             \
-    {                                                                                             \
-        int i = blockIdx.x * blockDim.x + threadIdx.x;                                            \
-        if (i >= total) return;                                                                   \
-        int rem = i, ia = 0, ib = 0;                                                              \
-        for (int d = ndim - 1; d >= 0; d--) {                                                     \
-            int coord = rem % shape[d];                                                           \
-            rem /= shape[d];                                                                      \
-            ia += coord * strides_a[d];                                                           \
-            ib += coord * strides_b[d];                                                           \
-        }                                                                                         \
-        out[i] = (expr);                                                                          \
-    }                                                                                             \
-    extern "C" void name##_broadcasted(const float *a, const float *b, float *out,                \
-                                       const int *shape, const int *strides_a,                    \
-                                       const int *strides_b, int ndim)                            \
-    {                                                                                             \
-        int total = 1;                                                                            \
-        for (int d = 0; d < ndim; d++) total *= shape[d];                                         \
-        int *d_shape = (int *)alloc_memory(ndim * sizeof(int));                                   \
-        int *d_sa = (int *)alloc_memory(ndim * sizeof(int));                                      \
-        int *d_sb = (int *)alloc_memory(ndim * sizeof(int));                                      \
-        copy_to_device(d_shape, shape, ndim * sizeof(int));                                       \
-        copy_to_device(d_sa, strides_a, ndim * sizeof(int));                                      \
-        copy_to_device(d_sb, strides_b, ndim * sizeof(int));                                      \
-        k_##name##_broadcasted<<<grid(total), BLOCK_SIZE>>>(a, b, out, d_shape, d_sa, d_sb, ndim, \
-                                                            total);                               \
-        CUDA_POST_LAUNCH();                                                                       \
-        sync_device();                                                                            \
-        free_memory(d_shape);                                                                     \
-        free_memory(d_sa);                                                                        \
-        free_memory(d_sb);                                                                        \
+// Broadcast metadata is passed by value as a kernel parameter (no device
+// allocation, host->device copy or synchronization per call). MAX_BCAST_DIMS
+// bounds the rank; broadcasts are only used for low-rank tensors.
+#define MAX_BCAST_DIMS 8
+struct BcastMeta {
+    int shape[MAX_BCAST_DIMS];
+    int sa[MAX_BCAST_DIMS];
+    int sb[MAX_BCAST_DIMS];
+    int ndim;
+    int total;
+};
+
+#define EMBER_BROADCAST_OP(name, expr)                                                 \
+    __global__ void k_##name##_broadcasted(const float *a, const float *b, float *out, \
+                                           BcastMeta meta)                             \
+    {                                                                                  \
+        int i = blockIdx.x * blockDim.x + threadIdx.x;                                 \
+        if (i >= meta.total) return;                                                   \
+        int rem = i, ia = 0, ib = 0;                                                   \
+        for (int d = meta.ndim - 1; d >= 0; d--) {                                     \
+            int coord = rem % meta.shape[d];                                           \
+            rem /= meta.shape[d];                                                      \
+            ia += coord * meta.sa[d];                                                  \
+            ib += coord * meta.sb[d];                                                  \
+        }                                                                              \
+        out[i] = (expr);                                                               \
+    }                                                                                  \
+    extern "C" void name##_broadcasted(const float *a, const float *b, float *out,     \
+                                       const int *shape, const int *strides_a,         \
+                                       const int *strides_b, int ndim)                 \
+    {                                                                                  \
+        BcastMeta meta;                                                                \
+        meta.ndim = ndim;                                                              \
+        int total = 1;                                                                 \
+        for (int d = 0; d < ndim; d++) {                                               \
+            meta.shape[d] = shape[d];                                                  \
+            meta.sa[d] = strides_a[d];                                                 \
+            meta.sb[d] = strides_b[d];                                                 \
+            total *= shape[d];                                                         \
+        }                                                                              \
+        meta.total = total;                                                            \
+        k_##name##_broadcasted<<<grid(total), BLOCK_SIZE>>>(a, b, out, meta);          \
+        CUDA_POST_LAUNCH();                                                            \
     }
 
 #define EMBER_INPLACE_OP(name, expr)                                       \
@@ -174,19 +182,41 @@ void transpose(const float *a, float *out, int n, int m)
     CUDA_POST_LAUNCH();
 }
 
+__global__ void k_sum_reduce(const float *a, float *out, int size)
+{
+    __shared__ float sdata[BLOCK_SIZE];
+    int tid = threadIdx.x;
+    int stride = gridDim.x * blockDim.x;
+
+    float v = 0.0f;
+    for (int i = blockIdx.x * blockDim.x + tid; i < size; i += stride) v += a[i];
+    sdata[tid] = v;
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) sdata[tid] += sdata[tid + s];
+        __syncthreads();
+    }
+    if (tid == 0) atomicAdd(out, sdata[0]);
+}
+
 float sum(const float *a, int size)
 {
-    // Simple, obviously-correct reduction via a host round-trip.
-    float *host = (float *)malloc((size_t)size * sizeof(float));
-    if (!host) return 0.0f;
+    // On-device reduction; only a single 4-byte scalar is copied to the host
+    // (instead of the whole array).
+    float *d_out = (float *)alloc_memory(sizeof(float));
+    GPU_ERR_CHK(cudaMemset(d_out, 0, sizeof(float)));
 
-    copy_from_device(host, a, (size_t)size * sizeof(float));
+    int blocks = grid(size);
+    if (blocks > 256) blocks = 256;
+    if (blocks < 1) blocks = 1;
+    k_sum_reduce<<<blocks, BLOCK_SIZE>>>(a, d_out, size);
+    CUDA_POST_LAUNCH();
 
-    float s = 0.0f;
-    for (int i = 0; i < size; i++) s += host[i];
-
-    free(host);
-    return s;
+    float result = 0.0f;
+    copy_from_device(&result, d_out, sizeof(float));
+    free_memory(d_out);
+    return result;
 }
 
 int sum_axis_product(const int *shape, int start, int end)

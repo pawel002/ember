@@ -24,6 +24,14 @@ class TestMSELoss:
         expected_grad = 2.0 * (pred_np - target_np) / pred_np.size
         np.testing.assert_allclose(grad, expected_grad, rtol=1e-4, atol=1e-5)
 
+        # gradient() (no scalar) must match forward()+backward()
+        g2 = (
+            loss.MSELoss()
+            .gradient(Tensor.from_np(pred_np), Tensor.from_np(target_np))
+            .to_np()
+        )
+        np.testing.assert_allclose(g2, grad, rtol=1e-5, atol=1e-6)
+
 
 class TestCrossEntropyLoss:
     SHAPES = [(4, 3), (16, 10), (1, 5)]
@@ -53,3 +61,11 @@ class TestCrossEntropyLoss:
         probs = np.exp(log_probs)
         expected_grad = (probs - target_np) / n
         np.testing.assert_allclose(grad, expected_grad, rtol=1e-4, atol=1e-5)
+
+        # gradient() (no scalar) must match forward()+backward()
+        g2 = (
+            loss.CrossEntropyLoss()
+            .gradient(Tensor.from_np(logits_np), Tensor.from_np(target_np))
+            .to_np()
+        )
+        np.testing.assert_allclose(g2, grad, rtol=1e-4, atol=1e-5)

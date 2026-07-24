@@ -20,3 +20,10 @@ class Loss(ABC):
     @abstractmethod
     def backward(self) -> Tensor:
         raise NotImplementedError
+
+    def gradient(self, pred: Tensor, target: Tensor) -> Tensor:
+        """Return dL/dpred directly, caching state, without materializing the
+        scalar loss value (which requires a device-to-host copy). Prefer this in
+        hot training loops; subclasses may override with a cheaper path."""
+        self.forward(pred, target)
+        return self.backward()
