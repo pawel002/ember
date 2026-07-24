@@ -87,6 +87,19 @@ EMBER_UNARY_OP(cosh, coshf(a[i]))
 EMBER_UNARY_OP(tanh, tanhf(a[i]))
 EMBER_UNARY_OP(ctgh, 1.0f / tanhf(a[i]))
 
+/* ---- fused activations ----
+ * Forward passes are plain unary expressions. Backward passes for
+ * ReLU/Sigmoid/Tanh depend only on (grad, y) and so are binary ops with
+ * a = grad, b = y (one kernel instead of the 2-3 ops the Python version used).
+ * GELU backward needs (grad, x, y) and is hand-written (see gelu_bwd). */
+EMBER_UNARY_OP(relu, fmaxf(a[i], 0.0f))
+EMBER_UNARY_OP(sigmoid, 1.0f / (1.0f + expf(-a[i])))
+EMBER_UNARY_OP(gelu, 0.5f * a[i] * (1.0f + tanhf(0.8f * a[i])))
+
+EMBER_BINARY_OP(relu_bwd, a[i] * ((b[i] > 0.0f) ? 1.0f : 0.0f))
+EMBER_BINARY_OP(sigmoid_bwd, a[i] * b[i] * (1.0f - b[i]))
+EMBER_BINARY_OP(tanh_bwd, a[i] * (1.0f - b[i] * b[i]))
+
 /* ---- in-place: a <op>= tensor (same shape) ---- */
 EMBER_INPLACE_OP(iadd, a[i] + b[i])
 EMBER_INPLACE_OP(isub, a[i] - b[i])

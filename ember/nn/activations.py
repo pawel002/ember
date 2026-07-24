@@ -1,66 +1,62 @@
-import ember as em
+from ember._core import (
+    _gelu,
+    _gelu_bwd,
+    _relu,
+    _relu_bwd_tensor,
+    _sigmoid,
+    _sigmoid_bwd_tensor,
+    _tanh,
+    _tanh_bwd_tensor,
+)
 from ember.tensor import Tensor
 
 from .base import Activation
 
 
 class ReLU(Activation):
-    def __init__(self):
-        super().__init__()
-
     def forward(self, x: Tensor, training: bool) -> Tensor:
         self.x = x
-        self.y = em.max(x, 0)
+        self.y = Tensor._from_core(_relu(x._core), x.shape, x.dtype)
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
         assert self.y is not None, "forward() must run before backward()"
-
-        return grad_y * (self.y > 0.0)
+        core = _relu_bwd_tensor(grad_y._core, self.y._core)
+        return Tensor._from_core(core, grad_y.shape, grad_y.dtype)
 
 
 class Sigmoid(Activation):
-    def __init__(self):
-        super().__init__()
-
     def forward(self, x: Tensor, training: bool) -> Tensor:
         self.x = x
-        self.y = 1.0 / (1.0 + em.exp(-x))
+        self.y = Tensor._from_core(_sigmoid(x._core), x.shape, x.dtype)
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
         assert self.y is not None, "forward() must run before backward()"
-
-        return grad_y * (self.y * (1.0 - self.y))
+        core = _sigmoid_bwd_tensor(grad_y._core, self.y._core)
+        return Tensor._from_core(core, grad_y.shape, grad_y.dtype)
 
 
 class Tanh(Activation):
-    def __init__(self):
-        super().__init__()
-
     def forward(self, x: Tensor, training: bool) -> Tensor:
         self.x = x
-        self.y = em.tanh(x)
+        self.y = Tensor._from_core(_tanh(x._core), x.shape, x.dtype)
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
         assert self.y is not None, "forward() must run before backward()"
-
-        return grad_y * (1 - self.y * self.y)
+        core = _tanh_bwd_tensor(grad_y._core, self.y._core)
+        return Tensor._from_core(core, grad_y.shape, grad_y.dtype)
 
 
 class GELU(Activation):
-    def __init__(self):
-        super().__init__()
-
     def forward(self, x: Tensor, training: bool) -> Tensor:
         self.x = x
-        self.y = 0.5 * x * (1 + em.tanh(0.8 * x))
+        self.y = Tensor._from_core(_gelu(x._core), x.shape, x.dtype)
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
         assert self.y is not None, "forward() must run before backward()"
         assert self.x is not None, "forward() must run before backward()"
-
-        a = 0.8
-        return grad_y * ((1.0 + em.tanh(a * self.x)) * (0.5 + a * (self.x - self.y)))
+        core = _gelu_bwd(grad_y._core, self.x._core, self.y._core)
+        return Tensor._from_core(core, grad_y.shape, grad_y.dtype)

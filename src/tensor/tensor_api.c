@@ -449,6 +449,21 @@ static PyObject *_max_axis(PyObject *module, PyObject *args)
     return impl_axis_reduce(args, max_axis);
 }
 
+/* GELU backward (grad, x, y) -> out; the other activation backprops are binary
+ * ops generated from operators.def. */
+static PyObject *_gelu_bwd(PyObject *module, PyObject *args)
+{
+    _Tensor *grad, *x, *y;
+    if (!PyArg_ParseTuple(args, "O!O!O!", &_TensorType, &grad, &_TensorType, &x, &_TensorType, &y))
+        return NULL;
+
+    _Tensor *result = alloc_result(grad->size);
+    if (!result) return NULL;
+
+    gelu_bwd(grad->d_ptr, x->d_ptr, y->d_ptr, result->d_ptr, grad->size);
+    return (PyObject *)result;
+}
+
 /* ---- fused optimizer steps (mutate p, m, v in place) ---- */
 static PyObject *_adam_step(PyObject *module, PyObject *args)
 {
@@ -558,6 +573,7 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_sum),
     OP_METHOD(_sum_axis),
     OP_METHOD(_max_axis),
+    OP_METHOD(_gelu_bwd),
     OP_METHOD(_adam_step),
     OP_METHOD(_adamw_step),
     OP_METHOD(_sgd_step),

@@ -131,6 +131,14 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
     }
 }
 
+void gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+{
+    const float a = 0.8f;
+    for (int i = 0; i < n; i++) {
+        out[i] = grad[i] * ((1.0f + tanhf(a * x[i])) * (0.5f + a * (x[i] - y[i])));
+    }
+}
+
 /* ---- fused optimizer steps ----
  * mb1/mb2 are 1-beta1/1-beta2 and bc1/bc2 are the bias corrections
  * 1/(1-beta^t), both precomputed on the host (in double, then cast) so the

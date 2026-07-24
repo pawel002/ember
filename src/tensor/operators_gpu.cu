@@ -276,6 +276,20 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
     CUDA_POST_LAUNCH();
 }
 
+__global__ void k_gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    const float a = 0.8f;
+    out[i] = grad[i] * ((1.0f + tanhf(a * x[i])) * (0.5f + a * (x[i] - y[i])));
+}
+
+void gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+{
+    k_gelu_bwd<<<grid(n), BLOCK_SIZE, 0, ember_stream()>>>(grad, x, y, out, n);
+    CUDA_POST_LAUNCH();
+}
+
 /* ---- fused optimizer steps ---- */
 __global__ void k_adam_step(float *p, const float *g, float *m, float *v, int size, float lr,
                             float beta1, float mb1, float beta2, float mb2, float eps, float bc1,
