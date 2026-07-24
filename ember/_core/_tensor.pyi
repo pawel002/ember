@@ -103,3 +103,37 @@ def _from_numpy(a: NDArray) -> _Tensor: ...
 def _sum(a: _Tensor) -> float: ...
 def _sum_axis(a: _Tensor, shape: tuple[int, ...], axis: int) -> _Tensor: ...
 def _max_axis(a: _Tensor, shape: tuple[int, ...], axis: int) -> _Tensor: ...
+
+# fused optimizer steps (mutate p, m, v in place)
+def _adam_step(
+    p: _Tensor,
+    g: _Tensor,
+    m: _Tensor,
+    v: _Tensor,
+    lr: float,
+    beta1: float,
+    mb1: float,
+    beta2: float,
+    mb2: float,
+    eps: float,
+    bc1: float,
+    bc2: float,
+) -> None: ...
+def _adamw_step(
+    p: _Tensor,
+    g: _Tensor,
+    m: _Tensor,
+    v: _Tensor,
+    lr: float,
+    beta1: float,
+    mb1: float,
+    beta2: float,
+    mb2: float,
+    eps: float,
+    bc1: float,
+    bc2: float,
+    weight_decay: float,
+) -> None: ...
+def _sgd_step(
+    p: _Tensor, g: _Tensor, v: _Tensor, lr: float, momentum: float
+) -> None: ...

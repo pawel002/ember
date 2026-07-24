@@ -28,6 +28,16 @@ int sum_axis_product(const int *shape, int start, int end);
 void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim);
 void max_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim);
 
+/* Fused, in-place optimizer steps (one kernel launch per parameter). The bias
+ * corrections (bc1 = 1/(1-beta1^t), bc2 = 1/(1-beta2^t)) are precomputed on the
+ * host so the kernel needs no per-step scalar powers. */
+void adam_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+               float mb1, float beta2, float mb2, float eps, float bc1, float bc2);
+void adamw_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
+                float weight_decay);
+void sgd_step(float *p, const float *g, float *v, int size, float lr, float momentum);
+
 #ifdef __cplusplus
 }
 #endif

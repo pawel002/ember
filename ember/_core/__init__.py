@@ -1,5 +1,7 @@
 from ._em_random import _constant, _seed, _uniform
 from ._tensor import (
+    _adam_step,
+    _adamw_step,
     _add_broadcasted,
     _add_scalar,
     _add_tensor,
@@ -38,6 +40,7 @@ from ._tensor import (
     _rpow_scalar,
     _rsub_scalar,
     _rtruediv_scalar,
+    _sgd_step,
     _sin,
     _sinh,
     _sqrt,
@@ -122,6 +125,9 @@ __all__ = [
     "_sum",
     "_sum_axis",
     "_max_axis",
+    "_adam_step",
+    "_adamw_step",
+    "_sgd_step",
     "_from_numpy",
     # distributions
     "_uniform",

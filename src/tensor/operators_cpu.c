@@ -130,3 +130,43 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
         }
     }
 }
+
+/* ---- fused optimizer steps ----
+ * mb1/mb2 are 1-beta1/1-beta2 and bc1/bc2 are the bias corrections
+ * 1/(1-beta^t), both precomputed on the host (in double, then cast) so the
+ * kernel reproduces the op-by-op float32 result exactly. */
+void adam_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+               float mb1, float beta2, float mb2, float eps, float bc1, float bc2)
+{
+    for (int i = 0; i < size; i++) {
+        float gi = g[i];
+        float mi = beta1 * m[i] + mb1 * gi;
+        float vi = beta2 * v[i] + mb2 * gi * gi;
+        m[i] = mi;
+        v[i] = vi;
+        p[i] -= lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
+    }
+}
+
+void adamw_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
+                float weight_decay)
+{
+    for (int i = 0; i < size; i++) {
+        float gi = g[i];
+        float mi = beta1 * m[i] + mb1 * gi;
+        float vi = beta2 * v[i] + mb2 * gi * gi;
+        m[i] = mi;
+        v[i] = vi;
+        p[i] = p[i] * (1.0f - lr * weight_decay) - lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
+    }
+}
+
+void sgd_step(float *p, const float *g, float *v, int size, float lr, float momentum)
+{
+    for (int i = 0; i < size; i++) {
+        float vi = momentum * v[i] + g[i];
+        v[i] = vi;
+        p[i] -= lr * vi;
+    }
+}

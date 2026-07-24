@@ -1,4 +1,5 @@
 import ember as em
+from ember._core import _sgd_step
 from ember.tensor import Tensor
 
 from .base import Optimizer
@@ -29,7 +30,6 @@ class SGD(Optimizer):
                 f"but got {len(gradients)}"
             )
 
+        # One fused, in-place kernel launch per parameter.
         for p, v, g in zip(self.parameters, self.velocities, gradients, strict=True):
-            v *= self.momentum
-            v += g
-            p -= self.lr * v
+            _sgd_step(p._core, g._core, v._core, self.lr, self.momentum)

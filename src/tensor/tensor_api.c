@@ -449,6 +449,47 @@ static PyObject *_max_axis(PyObject *module, PyObject *args)
     return impl_axis_reduce(args, max_axis);
 }
 
+/* ---- fused optimizer steps (mutate p, m, v in place) ---- */
+static PyObject *_adam_step(PyObject *module, PyObject *args)
+{
+    _Tensor *p, *g, *m, *v;
+    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2;
+    if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffff", &_TensorType, &p, &_TensorType, &g,
+                          &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
+                          &bc1, &bc2))
+        return NULL;
+
+    adam_step(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps, bc1,
+              bc2);
+    Py_RETURN_NONE;
+}
+
+static PyObject *_adamw_step(PyObject *module, PyObject *args)
+{
+    _Tensor *p, *g, *m, *v;
+    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay;
+    if (!PyArg_ParseTuple(args, "O!O!O!O!fffffffff", &_TensorType, &p, &_TensorType, &g,
+                          &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
+                          &bc1, &bc2, &weight_decay))
+        return NULL;
+
+    adamw_step(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
+               bc1, bc2, weight_decay);
+    Py_RETURN_NONE;
+}
+
+static PyObject *_sgd_step(PyObject *module, PyObject *args)
+{
+    _Tensor *p, *g, *v;
+    float lr, momentum;
+    if (!PyArg_ParseTuple(args, "O!O!O!ff", &_TensorType, &p, &_TensorType, &g, &_TensorType, &v,
+                          &lr, &momentum))
+        return NULL;
+
+    sgd_step(p->d_ptr, g->d_ptr, v->d_ptr, p->size, lr, momentum);
+    Py_RETURN_NONE;
+}
+
 /* ---- type & module definitions ---- */
 static PyMethodDef _Tensor_instance_methods[] = {
     {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
@@ -477,6 +518,9 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_sum),
     OP_METHOD(_sum_axis),
     OP_METHOD(_max_axis),
+    OP_METHOD(_adam_step),
+    OP_METHOD(_adamw_step),
+    OP_METHOD(_sgd_step),
 
     {NULL}};
 

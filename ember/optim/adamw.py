@@ -1,4 +1,5 @@
 import ember as em
+from ember._core import _adamw_step
 from ember.tensor import Tensor
 
 from .base import Optimizer
@@ -38,19 +39,27 @@ class AdamW(Optimizer):
             )
 
         self.t += 1
+        mb1 = 1 - self.beta1
+        mb2 = 1 - self.beta2
+        bc1 = 1.0 / (1 - self.beta1**self.t)
+        bc2 = 1.0 / (1 - self.beta2**self.t)
 
+        # One fused, in-place kernel launch per parameter.
         for p, m, v, g in zip(
             self.parameters, self.means, self.variances, gradients, strict=True
         ):
-            m *= self.beta1
-            m += (1 - self.beta1) * g
-
-            v *= self.beta2
-            v += (1 - self.beta2) * (g * g)
-
-            m_hat = m / (1 - self.beta1**self.t)
-            v_hat = v / (1 - self.beta2**self.t)
-
-            # decoupled weight decay, then the standard Adam step
-            p -= self.lr * self.weight_decay * p
-            p -= self.lr * m_hat / (em.sqrt(v_hat) + self.eps)
+            _adamw_step(
+                p._core,
+                g._core,
+                m._core,
+                v._core,
+                self.lr,
+                self.beta1,
+                mb1,
+                self.beta2,
+                mb2,
+                self.eps,
+                bc1,
+                bc2,
+                self.weight_decay,
+            )

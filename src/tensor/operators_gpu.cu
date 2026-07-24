@@ -271,4 +271,65 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
     k_max_axis<<<grid(total), BLOCK_SIZE>>>(a, out, outer_stride, inner_stride, axis_dim);
     CUDA_POST_LAUNCH();
 }
+
+/* ---- fused optimizer steps ---- */
+__global__ void k_adam_step(float *p, const float *g, float *m, float *v, int size, float lr,
+                            float beta1, float mb1, float beta2, float mb2, float eps, float bc1,
+                            float bc2)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= size) return;
+    float gi = g[i];
+    float mi = beta1 * m[i] + mb1 * gi;
+    float vi = beta2 * v[i] + mb2 * gi * gi;
+    m[i] = mi;
+    v[i] = vi;
+    p[i] -= lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
+}
+
+void adam_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+               float mb1, float beta2, float mb2, float eps, float bc1, float bc2)
+{
+    k_adam_step<<<grid(size), BLOCK_SIZE>>>(p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc1,
+                                            bc2);
+    CUDA_POST_LAUNCH();
+}
+
+__global__ void k_adamw_step(float *p, const float *g, float *m, float *v, int size, float lr,
+                             float beta1, float mb1, float beta2, float mb2, float eps, float bc1,
+                             float bc2, float weight_decay)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= size) return;
+    float gi = g[i];
+    float mi = beta1 * m[i] + mb1 * gi;
+    float vi = beta2 * v[i] + mb2 * gi * gi;
+    m[i] = mi;
+    v[i] = vi;
+    p[i] = p[i] * (1.0f - lr * weight_decay) - lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
+}
+
+void adamw_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+                float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
+                float weight_decay)
+{
+    k_adamw_step<<<grid(size), BLOCK_SIZE>>>(p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc1,
+                                             bc2, weight_decay);
+    CUDA_POST_LAUNCH();
+}
+
+__global__ void k_sgd_step(float *p, const float *g, float *v, int size, float lr, float momentum)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= size) return;
+    float vi = momentum * v[i] + g[i];
+    v[i] = vi;
+    p[i] -= lr * vi;
+}
+
+void sgd_step(float *p, const float *g, float *v, int size, float lr, float momentum)
+{
+    k_sgd_step<<<grid(size), BLOCK_SIZE>>>(p, g, v, size, lr, momentum);
+    CUDA_POST_LAUNCH();
+}
 }
