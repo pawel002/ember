@@ -141,13 +141,39 @@ struct BcastMeta {
 #include "operators.def"
 
 /* ---- non-element-wise operators ---- */
+
+// For very small matrices cuBLAS's fixed per-call launch/setup overhead
+// dominates the actual FLOPs, so a trivial one-thread-per-output kernel is
+// faster. Above this work threshold cuBLAS wins and is used instead.
+#define MATMUL_SMALL_MAX_WORK (1 << 20)
+
+__global__ void k_simple_matmul(const float *a, const float *b, float *out, int n, int m, int k)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < n && col < m) {
+        float acc = 0.0f;
+        for (int l = 0; l < k; l++) acc += a[row * k + l] * b[l * m + col];
+        out[row * m + col] = acc;
+    }
+}
+
 extern "C" {
 
 void matmul(const float *a, const float *b, float *out, int n, int m, int k)
 {
-    // C(n x m) = A(n x k) * B(k x m), row-major. cuBLAS is column-major, so we
-    // compute C^T = B^T * A^T by swapping the operands and using the fact that
-    // a row-major (n x m) buffer is a column-major (m x n) buffer.
+    // C(n x m) = A(n x k) * B(k x m), row-major.
+    if ((long long)n * m * k <= MATMUL_SMALL_MAX_WORK) {
+        dim3 block(16, 16);
+        dim3 g((m + block.x - 1) / block.x, (n + block.y - 1) / block.y);
+        k_simple_matmul<<<g, block, 0, ember_stream()>>>(a, b, out, n, m, k);
+        CUDA_POST_LAUNCH();
+        return;
+    }
+
+    // cuBLAS is column-major, so we compute C^T = B^T * A^T by swapping the
+    // operands and using the fact that a row-major (n x m) buffer is a
+    // column-major (m x n) buffer.
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
