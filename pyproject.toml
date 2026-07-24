@@ -34,6 +34,11 @@ dev = [
 bench = [
     "torch",
 ]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "pymdown-extensions>=10.20",
+]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu126" }
@@ -42,11 +47,6 @@ torch = { index = "pytorch-cu126" }
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
-docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.5.0",
-    "pymdown-extensions>=10.20",
-]
 
 [tool.scikit-build]
 wheel.packages = ["ember"]
