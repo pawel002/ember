@@ -13,6 +13,7 @@
 - Broaden dtype support (backend is float32-only today).
 - Fused flash-attention kernel (current path is batched GEMM + fused softmax,
   which materializes the S×S scores); cross-attention (separate q / kv inputs).
-- More layers (Conv) and a data-loading path.
+- More layers (Conv).
 - Benchmarks in CI (regression guard) and binary wheels (cibuildwheel) for the
   CPU build.
+  

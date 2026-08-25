@@ -1,5 +1,5 @@
 # expose submodules
-from . import cuda, loss, nn, optim, random
+from . import cuda, data, loss, nn, optim, random
 from .tensor import (
     T,
     Tensor,
@@ -46,4 +46,5 @@ __all__ = [
     "optim",
     "loss",
     "cuda",
+    "data",
 ]
