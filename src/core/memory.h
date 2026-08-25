@@ -18,6 +18,13 @@ void copy_from_device(void *dst_host, const void *src_device, size_t bytes);
 void copy_to_device_pinned(void *dst_device, const void *src_host, size_t bytes);
 void sync_device();
 
+/* Matmul precision. 0 = full fp32 (cuBLAS default), 1 = TF32 tensor cores
+ * (~3x the fp32 GEMM throughput on Ampere+, 10-bit mantissa on the inputs,
+ * fp32 accumulate). Applies to every cuBLAS GEMM in the backend. CPU backend:
+ * stores the flag but ignores it. */
+void set_matmul_tf32(int enabled);
+int get_matmul_tf32(void);
+
 /* CUDA-graph capture of the ember stream. On the CPU backend these are no-ops
  * (end_capture returns NULL). end_capture returns an opaque cudaGraphExec_t. */
 void begin_capture(void);

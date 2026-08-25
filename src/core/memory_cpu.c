@@ -52,3 +52,17 @@ void graph_destroy(void *exec)
 {
     (void)exec;
 }
+
+/* The CPU backend has no cuBLAS; the flag is stored so the Python API behaves
+ * the same on both backends. */
+static int g_tf32 = 0;
+
+void set_matmul_tf32(int enabled)
+{
+    g_tf32 = enabled ? 1 : 0;
+}
+
+int get_matmul_tf32(void)
+{
+    return g_tf32;
+}

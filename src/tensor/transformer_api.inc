@@ -219,8 +219,73 @@ static PyObject *_embedding_bwd(PyObject *module, PyObject *args)
     return (PyObject *)result;
 }
 
+/* ---- fused attention ----
+ * _attention_fwd(q, k, v, batch, sq, sk, dh, scale, causal, nheads, sseq)
+ *     -> (out, lse)
+ * _attention_bwd(dout, q, k, v, out, lse, batch, sq, sk, dh, scale, causal,
+ *                nheads, sseq) -> (dq, dk, dv)
+ * nheads/sseq describe the interleaving of q/k/v/out (see transformer.h); the
+ * results follow the same layout as their inputs. */
+static PyObject *_attention_supported(PyObject *module, PyObject *args)
+{
+    int dh;
+    if (!PyArg_ParseTuple(args, "i", &dh)) return NULL;
+    return PyBool_FromLong(attention_supported(dh));
+}
+
+static PyObject *_attention_fwd(PyObject *module, PyObject *args)
+{
+    _Tensor *q, *k, *v;
+    int batch, sq, sk, dh, causal, nheads, sseq;
+    float scale;
+    if (!PyArg_ParseTuple(args, "O!O!O!iiiifiii", &_TensorType, &q, &_TensorType, &k, &_TensorType,
+                          &v, &batch, &sq, &sk, &dh, &scale, &causal, &nheads, &sseq))
+        return NULL;
+
+    _Tensor *out = alloc_result(batch * sq * dh);
+    _Tensor *lse = alloc_result(batch * sq);
+    if (!out || !lse) {
+        Py_XDECREF(out);
+        Py_XDECREF(lse);
+        return PyErr_NoMemory();
+    }
+
+    attention_fwd(q->d_ptr, k->d_ptr, v->d_ptr, out->d_ptr, lse->d_ptr, batch, sq, sk, dh, scale,
+                  causal, nheads, sseq);
+    return Py_BuildValue("(NN)", (PyObject *)out, (PyObject *)lse);
+}
+
+static PyObject *_attention_bwd(PyObject *module, PyObject *args)
+{
+    _Tensor *dout, *q, *k, *v, *out, *lse;
+    int batch, sq, sk, dh, causal, nheads, sseq;
+    float scale;
+    if (!PyArg_ParseTuple(args, "O!O!O!O!O!O!iiiifiii", &_TensorType, &dout, &_TensorType, &q,
+                          &_TensorType, &k, &_TensorType, &v, &_TensorType, &out, &_TensorType,
+                          &lse, &batch, &sq, &sk, &dh, &scale, &causal, &nheads, &sseq))
+        return NULL;
+
+    _Tensor *dq = alloc_result(batch * sq * dh);
+    _Tensor *dk = alloc_result(batch * sk * dh);
+    _Tensor *dv = alloc_result(batch * sk * dh);
+    _Tensor *rowdot = alloc_result(batch * sq);
+    if (!dq || !dk || !dv || !rowdot) {
+        Py_XDECREF(dq);
+        Py_XDECREF(dk);
+        Py_XDECREF(dv);
+        Py_XDECREF(rowdot);
+        return PyErr_NoMemory();
+    }
+
+    attention_bwd(dout->d_ptr, q->d_ptr, k->d_ptr, v->d_ptr, out->d_ptr, lse->d_ptr, rowdot->d_ptr,
+                  dq->d_ptr, dk->d_ptr, dv->d_ptr, batch, sq, sk, dh, scale, causal, nheads, sseq);
+    Py_DECREF(rowdot);
+    return Py_BuildValue("(NNN)", (PyObject *)dq, (PyObject *)dk, (PyObject *)dv);
+}
+
 #define EMBER_TRANSFORMER_METHODS                                                              \
     OP_METHOD(_softmax_fwd), OP_METHOD(_softmax_bwd), OP_METHOD(_softmax_rows),                \
         OP_METHOD(_softmax_rows_causal), OP_METHOD(_layernorm_fwd), OP_METHOD(_layernorm_bwd), \
         OP_METHOD(_permute_0213), OP_METHOD(_bmm), OP_METHOD(_embedding_fwd),                  \
-        OP_METHOD(_embedding_bwd),
+        OP_METHOD(_embedding_bwd), OP_METHOD(_attention_supported), OP_METHOD(_attention_fwd), \
+        OP_METHOD(_attention_bwd),

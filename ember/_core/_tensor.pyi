@@ -27,7 +27,7 @@ def _gelu(a: _Tensor) -> _Tensor: ...
 def _relu_bwd_tensor(grad: _Tensor, y: _Tensor) -> _Tensor: ...
 def _sigmoid_bwd_tensor(grad: _Tensor, y: _Tensor) -> _Tensor: ...
 def _tanh_bwd_tensor(grad: _Tensor, y: _Tensor) -> _Tensor: ...
-def _gelu_bwd(grad: _Tensor, x: _Tensor, y: _Tensor) -> _Tensor: ...
+def _gelu_bwd(grad: _Tensor, x: _Tensor) -> _Tensor: ...
 
 # scalar operators
 def _add_scalar(a: _Tensor, b: float) -> _Tensor: ...
@@ -208,6 +208,21 @@ def _adam_step_group(
     bc1: float,
     bc2: float,
 ) -> None: ...
+def _adamw_step_group(
+    params: list[_Tensor],
+    grads: list[_Tensor],
+    means: list[_Tensor],
+    variances: list[_Tensor],
+    lr: float,
+    beta1: float,
+    mb1: float,
+    beta2: float,
+    mb2: float,
+    eps: float,
+    bc1: float,
+    bc2: float,
+    weight_decay: float,
+) -> None: ...
 
 # capturable Adam/AdamW: device-side step counter (t) and bias corrections (bc)
 def _adam_bias_update(t: _Tensor, bc: _Tensor, beta1: float, beta2: float) -> None: ...
@@ -242,7 +257,41 @@ def _adamw_step_dev(
 # device / CUDA-graph control
 def _sync() -> None: ...
 def _empty_cache() -> None: ...
+def _set_matmul_tf32(enabled: bool) -> None: ...
+def _get_matmul_tf32() -> bool: ...
 def _begin_capture() -> None: ...
 def _end_capture() -> int: ...
 def _graph_launch(handle: int) -> None: ...
 def _graph_destroy(handle: int) -> None: ...
+
+# fused ("flash") attention: q/k/v/out are (batch, seq, head_dim) row-major
+def _attention_supported(head_dim: int) -> bool: ...
+def _attention_fwd(
+    q: _Tensor,
+    k: _Tensor,
+    v: _Tensor,
+    batch: int,
+    sq: int,
+    sk: int,
+    head_dim: int,
+    scale: float,
+    causal: bool,
+    nheads: int,
+    seq_stride: int,
+) -> tuple[_Tensor, _Tensor]: ...
+def _attention_bwd(
+    dout: _Tensor,
+    q: _Tensor,
+    k: _Tensor,
+    v: _Tensor,
+    out: _Tensor,
+    lse: _Tensor,
+    batch: int,
+    sq: int,
+    sk: int,
+    head_dim: int,
+    scale: float,
+    causal: bool,
+    nheads: int,
+    seq_stride: int,
+) -> tuple[_Tensor, _Tensor, _Tensor]: ...

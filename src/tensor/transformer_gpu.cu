@@ -108,9 +108,35 @@ __global__ void k_softmax_axis_bwd(const float *dout, const float *y, float *dx,
     }
 }
 
+// Block-per-row softmax backward for contiguous rows (inner == 1, the common
+// case): the dot product over the row is a block reduction instead of a
+// per-thread serial loop, and the write pass is coalesced.
+__global__ void k_softmax_rows_bwd(const float *dout, const float *y, float *dx, int rows, int D)
+{
+    extern __shared__ float sh[];
+    int row = blockIdx.x;
+    if (row >= rows) return;
+
+    const float *dr = dout + (size_t)row * D;
+    const float *yr = y + (size_t)row * D;
+    float *dxr = dx + (size_t)row * D;
+
+    float part = 0.0f;
+    for (int j = threadIdx.x; j < D; j += blockDim.x) part += dr[j] * yr[j];
+    float dot = block_reduce_sum(part, sh);
+
+    for (int j = threadIdx.x; j < D; j += blockDim.x) dxr[j] = yr[j] * (dr[j] - dot);
+}
+
 extern "C" void softmax_axis_bwd(const float *dout, const float *y, float *dx, int outer, int inner,
                                  int axis_dim)
 {
+    if (inner == 1) {
+        k_softmax_rows_bwd<<<outer, TBLOCK, TBLOCK * sizeof(float), ember_stream()>>>(
+            dout, y, dx, outer, axis_dim);
+        CUDA_POST_LAUNCH();
+        return;
+    }
     int total = outer * inner;
     k_softmax_axis_bwd<<<grid1(total), TBLOCK, 0, ember_stream()>>>(dout, y, dx, outer, inner,
                                                                     axis_dim);
@@ -196,6 +222,9 @@ extern "C" void layernorm_fwd(const float *x, const float *gamma, const float *b
 }
 
 // dx (fused per row) + atomic accumulation of dgamma/dbeta across rows.
+// One block per row: the dgamma/dbeta atomics land on only D distinct addresses
+// from every one of the N rows, so this is only used as the fallback for a D
+// too large for the blocked kernel below.
 __global__ void k_layernorm_bwd(const float *dout, const float *x, const float *gamma,
                                 const float *mean, const float *rstd, float *dx, float *dgamma,
                                 float *dbeta, int N, int D)
@@ -228,12 +257,81 @@ __global__ void k_layernorm_bwd(const float *dout, const float *x, const float *
     }
 }
 
+// Blocked variant: each block walks a *strip* of rows and keeps the dgamma /
+// dbeta partials for the whole strip in shared memory. Thread `tid` only ever
+// touches columns j == tid (mod blockDim), so the shared accumulation needs no
+// atomics at all, and the global atomics drop from 2*N*D (one per element, all
+// contending on D addresses) to 2*gridDim.x*D -- ~16x fewer here, which is what
+// made the per-row kernel bandwidth-starved.
+__global__ void k_layernorm_bwd_blocked(const float *dout, const float *x, const float *gamma,
+                                        const float *mean, const float *rstd, float *dx,
+                                        float *dgamma, float *dbeta, int N, int D)
+{
+    extern __shared__ float sh[];
+    float *red = sh;               // blockDim.x slots for the row reductions
+    float *sdg = sh + blockDim.x;  // D
+    float *sdb = sdg + D;          // D
+
+    for (int j = threadIdx.x; j < D; j += blockDim.x) {
+        sdg[j] = 0.0f;
+        sdb[j] = 0.0f;
+    }
+    __syncthreads();
+
+    for (int row = blockIdx.x; row < N; row += gridDim.x) {
+        const float *dor = dout + (size_t)row * D;
+        const float *xr = x + (size_t)row * D;
+        float *dxr = dx + (size_t)row * D;
+        float mu = mean[row], rs = rstd[row];
+
+        float s1 = 0.0f, s2 = 0.0f;
+        for (int j = threadIdx.x; j < D; j += blockDim.x) {
+            float xhat = (xr[j] - mu) * rs;
+            float dxh = dor[j] * gamma[j];
+            s1 += dxh;
+            s2 += dxh * xhat;
+        }
+        float c1 = block_reduce_sum(s1, red) / D;
+        float c2 = block_reduce_sum(s2, red) / D;
+
+        for (int j = threadIdx.x; j < D; j += blockDim.x) {
+            float xhat = (xr[j] - mu) * rs;
+            float dy = dor[j];
+            float dxh = dy * gamma[j];
+            dxr[j] = rs * (dxh - c1 - xhat * c2);
+            sdg[j] += dy * xhat;
+            sdb[j] += dy;
+        }
+        __syncthreads();  // the next row's reduction reuses `red`
+    }
+
+    for (int j = threadIdx.x; j < D; j += blockDim.x) {
+        atomicAdd(&dgamma[j], sdg[j]);
+        atomicAdd(&dbeta[j], sdb[j]);
+    }
+}
+
+// Shared-memory budget for the blocked kernel: TBLOCK reduction slots + 2*D
+// accumulators. Past this we fall back to the per-row kernel.
+#define LN_BWD_MAX_SHARED_FLOATS 6144
+
 extern "C" void layernorm_bwd(const float *dout, const float *x, const float *gamma,
                               const float *mean, const float *rstd, float *dx, float *dgamma,
                               float *dbeta, int N, int D)
 {
     GPU_ERR_CHK(cudaMemsetAsync(dgamma, 0, (size_t)D * sizeof(float), ember_stream()));
     GPU_ERR_CHK(cudaMemsetAsync(dbeta, 0, (size_t)D * sizeof(float), ember_stream()));
+
+    size_t floats = (size_t)TBLOCK + 2 * (size_t)D;
+    if (floats <= LN_BWD_MAX_SHARED_FLOATS) {
+        // Enough blocks to fill the device, few enough that each owns a strip
+        // of rows (which is what collapses the atomic traffic).
+        int blocks = N < 1024 ? N : 1024;
+        k_layernorm_bwd_blocked<<<blocks, TBLOCK, floats * sizeof(float), ember_stream()>>>(
+            dout, x, gamma, mean, rstd, dx, dgamma, dbeta, N, D);
+        CUDA_POST_LAUNCH();
+        return;
+    }
     k_layernorm_bwd<<<N, TBLOCK, TBLOCK * sizeof(float), ember_stream()>>>(
         dout, x, gamma, mean, rstd, dx, dgamma, dbeta, N, D);
     CUDA_POST_LAUNCH();
@@ -279,7 +377,14 @@ extern "C" void bmm(const float *a, const float *b, float *out, int batch, int n
     int ldb = transB ? k : m;
     float beta = 0.0f;
 
-    CUBLAS_ERR_CHK(cublasSetStream(tf_cublas(), ember_stream()));
+    ember_cublas_prepare(tf_cublas());
+    if (batch == 1) {
+        // Plain GEMM: the strided-batched entry point has extra setup cost and
+        // this is the hot path for Linear.backward (two OP_T products each).
+        CUBLAS_ERR_CHK(
+            cublasSgemm(tf_cublas(), opB, opA, m, n, k, &alpha, b, ldb, a, lda, &beta, out, m));
+        return;
+    }
     CUBLAS_ERR_CHK(cublasSgemmStridedBatched(tf_cublas(), opB, opA, m, n, k, &alpha, b, ldb,
                                              (long long)k * m, a, lda, (long long)n * k, &beta, out,
                                              m, (long long)n * m, batch));

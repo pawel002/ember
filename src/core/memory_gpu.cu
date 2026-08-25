@@ -28,7 +28,18 @@ namespace
 std::unordered_map<size_t, std::vector<void *>> g_free_lists;
 std::unordered_map<void *, size_t> g_block_size;
 cudaStream_t g_stream = NULL;
+int g_tf32 = 0;
 }  // namespace
+
+// Bind a cuBLAS handle to the ember stream and to the currently selected matmul
+// precision. Both are pure handle-state writes (no device work), so calling
+// this before every GEMM is free and keeps the toggle live at runtime.
+void ember_cublas_prepare(cublasHandle_t handle)
+{
+    CUBLAS_ERR_CHK(cublasSetStream(handle, ember_stream()));
+    CUBLAS_ERR_CHK(
+        cublasSetMathMode(handle, g_tf32 ? CUBLAS_TF32_TENSOR_OP_MATH : CUBLAS_DEFAULT_MATH));
+}
 
 // All ember GPU work runs on this dedicated stream (created lazily) so that the
 // training step can be captured into a CUDA graph.
@@ -157,5 +168,15 @@ void graph_destroy(void *exec)
 void sync_device()
 {
     GPU_ERR_CHK(cudaStreamSynchronize(ember_stream()));
+}
+
+void set_matmul_tf32(int enabled)
+{
+    g_tf32 = enabled ? 1 : 0;
+}
+
+int get_matmul_tf32(void)
+{
+    return g_tf32;
 }
 }

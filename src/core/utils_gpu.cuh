@@ -38,4 +38,9 @@ inline void cublasAssert(cublasStatus_t code, const char *file, int line)
 // graph. Defined in memory_gpu.cu.
 cudaStream_t ember_stream(void);
 
+// Bind `handle` to the ember stream and the selected matmul precision (see
+// set_matmul_tf32 in memory.h). Call before every cuBLAS GEMM. Defined in
+// memory_gpu.cu.
+void ember_cublas_prepare(cublasHandle_t handle);
+
 #endif

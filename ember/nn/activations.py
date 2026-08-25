@@ -56,7 +56,6 @@ class GELU(Activation):
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
-        assert self.y is not None, "forward() must run before backward()"
         assert self.x is not None, "forward() must run before backward()"
-        core = _gelu_bwd(grad_y._core, self.x._core, self.y._core)
+        core = _gelu_bwd(grad_y._core, self.x._core)
         return Tensor._from_core(core, grad_y.shape, grad_y.dtype)

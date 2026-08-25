@@ -4,6 +4,7 @@ import ember as em
 from ember._core import _matmul_bias
 from ember.tensor import Tensor
 
+from ._functional import mm
 from .base import Layer
 
 
@@ -55,10 +56,15 @@ class Linear(Layer):
     def backward(self, grad_y: Tensor) -> Tensor:
         assert self.x is not None, "forward() must run before backward()"
 
-        self.grad_w = em.T(self.x) @ grad_y
+        n, in_f = self.x.shape
+        out_f = self.out_features
+
+        # Both products need a transposed operand; passing them as cuBLAS OP_T
+        # flags reads x / w in place instead of materializing two transposed
+        # copies (and their temporaries) per Linear per step.
+        self.grad_w = mm(self.x, grad_y, in_f, out_f, n, trans_a=True)
         self.grad_b = em.sum(grad_y, axis=0)  # type: ignore
-        grad_x = grad_y @ em.T(self.w)
-        return grad_x
+        return mm(grad_y, self.w, n, in_f, out_f, trans_b=True)
 
 
 class Dropout(Layer):

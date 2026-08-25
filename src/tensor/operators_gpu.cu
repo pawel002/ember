@@ -177,7 +177,7 @@ void matmul(const float *a, const float *b, float *out, int n, int m, int k)
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
-    CUBLAS_ERR_CHK(cublasSetStream(cublas_handle(), ember_stream()));
+    ember_cublas_prepare(cublas_handle());
     CUBLAS_ERR_CHK(cublasSgemm(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, b, m, a,
                                k, &beta, out, m));
 }
@@ -189,7 +189,7 @@ void matmul_batched(const float *a, const float *b, float *out, int batch, int n
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
-    CUBLAS_ERR_CHK(cublasSetStream(cublas_handle(), ember_stream()));
+    ember_cublas_prepare(cublas_handle());
     CUBLAS_ERR_CHK(cublasSgemmStridedBatched(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
                                              &alpha, b, m, (long long)k * m, a, k, (long long)n * k,
                                              &beta, out, m, (long long)n * m, batch));
@@ -298,9 +298,106 @@ __global__ void k_sum_axis(const float *a, float *out, int outer_stride, int inn
     out[idx] = s;
 }
 
+__device__ __forceinline__ float block_reduce_sum(float v, float *sh)
+{
+    int tid = threadIdx.x;
+    sh[tid] = v;
+    __syncthreads();
+    for (int s = blockDim.x >> 1; s > 0; s >>= 1) {
+        if (tid < s) sh[tid] += sh[tid + s];
+        __syncthreads();
+    }
+    float r = sh[0];
+    __syncthreads();
+    return r;
+}
+
+// Contiguous last-axis reduction (inner_stride == 1): block-per-row with a
+// block reduction instead of a per-thread serial row loop.
+__global__ void k_sum_axis_rows(const float *a, float *out, int rows, int axis_dim)
+{
+    extern __shared__ float sh[];
+    int row = blockIdx.x;
+    if (row >= rows) return;
+
+    const float *ar = a + (size_t)row * axis_dim;
+    float part = 0.0f;
+    for (int j = threadIdx.x; j < axis_dim; j += blockDim.x) part += ar[j];
+    float s = block_reduce_sum(part, sh);
+    if (threadIdx.x == 0) out[row] = s;
+}
+
+// Few outputs but a long reduction axis (bias gradients: summing a
+// (16384, 256) activation over axis 0). One thread per output column cannot
+// keep enough loads in flight to saturate memory, so the axis is split over
+// `chunks` row-strips that reduce independently. Two passes rather than
+// atomics: the partials are tiny (chunks * inner_stride) and the combine pass
+// is essentially free, whereas atomics would funnel every block through the
+// same handful of L2 lines.
+__global__ void k_sum_axis_partial(const float *a, float *part, int inner_stride, int axis_dim,
+                                   int chunks)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= inner_stride) return;
+    int ch = blockIdx.y;
+    int o = blockIdx.z;
+
+    const float *base = a + ((size_t)o * axis_dim) * inner_stride + i;
+    float s = 0.0f;
+    for (int r = ch; r < axis_dim; r += chunks) s += base[(size_t)r * inner_stride];
+    part[(((size_t)o * chunks) + ch) * inner_stride + i] = s;
+}
+
+__global__ void k_sum_axis_combine(const float *part, float *out, int inner_stride, int chunks)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= inner_stride) return;
+    int o = blockIdx.y;
+
+    const float *p = part + ((size_t)o * chunks) * inner_stride + i;
+    float s = 0.0f;
+    for (int c = 0; c < chunks; c++) s += p[(size_t)c * inner_stride];
+    out[(size_t)o * inner_stride + i] = s;
+}
+
 void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim)
 {
     int total = outer_stride * inner_stride;
+    if (inner_stride == 1) {
+        k_sum_axis_rows<<<outer_stride, BLOCK_SIZE, BLOCK_SIZE * sizeof(float), ember_stream()>>>(
+            a, out, outer_stride, axis_dim);
+        CUDA_POST_LAUNCH();
+        return;
+    }
+    if (total < (1 << 16) && axis_dim >= 256) {
+        // Enough row-strips to keep loads in flight, but few enough that the
+        // combine pass (which has only `inner_stride` outputs to spread over
+        // the device) stays cheap. Measured optimum on Ada for the bias-
+        // gradient shapes; beyond ~256 strips the combine starts to dominate.
+        int cols = grid(inner_stride);
+        int chunks = 256 / (cols * outer_stride);
+        if (chunks < 1) chunks = 1;
+        if (chunks > 256) chunks = 256;
+        if (chunks > axis_dim) chunks = axis_dim;
+        if (chunks > 1) {
+            size_t bytes = (size_t)outer_stride * chunks * inner_stride * sizeof(float);
+            float *part = (float *)alloc_memory(bytes);
+            if (part) {
+                dim3 g(cols, chunks, outer_stride);
+                k_sum_axis_partial<<<g, BLOCK_SIZE, 0, ember_stream()>>>(a, part, inner_stride,
+                                                                         axis_dim, chunks);
+                CUDA_POST_LAUNCH();
+                dim3 g2(cols, outer_stride);
+                k_sum_axis_combine<<<g2, BLOCK_SIZE, 0, ember_stream()>>>(part, out, inner_stride,
+                                                                          chunks);
+                CUDA_POST_LAUNCH();
+                // Single-stream ordering means the buffer cannot be handed out
+                // again before both kernels have run.
+                free_memory(part);
+                return;
+            }
+        }
+    }
     k_sum_axis<<<grid(total), BLOCK_SIZE, 0, ember_stream()>>>(a, out, outer_stride, inner_stride,
                                                                axis_dim);
     CUDA_POST_LAUNCH();
@@ -330,17 +427,23 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
     CUDA_POST_LAUNCH();
 }
 
-__global__ void k_gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+// y = 0.5*x*(1+t) with t = tanh(0.8x), so substituting it into
+//     dy/dx = (1+t) * (0.5 + 0.8*(x - y))
+// gives 0.5*(1+t)*(1 + 0.8*x*(1-t)) -- same value, but y no longer has to be
+// read back from memory (this kernel is purely bandwidth-bound).
+__global__ void k_gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
     const float a = 0.8f;
-    out[i] = grad[i] * ((1.0f + tanhf(a * x[i])) * (0.5f + a * (x[i] - y[i])));
+    float xi = x[i];
+    float t = tanhf(a * xi);
+    out[i] = grad[i] * 0.5f * (1.0f + t) * (1.0f + a * xi * (1.0f - t));
 }
 
-void gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+void gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
-    k_gelu_bwd<<<grid(n), BLOCK_SIZE, 0, ember_stream()>>>(grad, x, y, out, n);
+    k_gelu_bwd<<<grid(n), BLOCK_SIZE, 0, ember_stream()>>>(grad, x, out, n);
     CUDA_POST_LAUNCH();
 }
 
@@ -434,6 +537,38 @@ void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *
     dim3 gdim(grid(max_size), nparams);
     k_adam_step_group<<<gdim, BLOCK_SIZE, 0, ember_stream()>>>(ps, gs, ms, vs, sizes, lr, beta1,
                                                                mb1, beta2, mb2, eps, bc1, bc2);
+    CUDA_POST_LAUNCH();
+}
+
+__global__ void k_adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes,
+                                   float lr, float beta1, float mb1, float beta2, float mb2,
+                                   float eps, float bc1, float bc2, float weight_decay)
+{
+    int pi = blockIdx.y;  // one grid row per parameter
+    int n = sizes[pi];
+    float *p = ps[pi];
+    const float *g = gs[pi];
+    float *m = ms[pi];
+    float *v = vs[pi];
+    float decay = 1.0f - lr * weight_decay;
+
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
+        float gi = g[i];
+        float mi = beta1 * m[i] + mb1 * gi;
+        float vi = beta2 * v[i] + mb2 * gi * gi;
+        m[i] = mi;
+        v[i] = vi;
+        p[i] = p[i] * decay - lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
+    }
+}
+
+void adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
+                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
+                      float eps, float bc1, float bc2, float weight_decay)
+{
+    dim3 gdim(grid(max_size), nparams);
+    k_adamw_step_group<<<gdim, BLOCK_SIZE, 0, ember_stream()>>>(
+        ps, gs, ms, vs, sizes, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay);
     CUDA_POST_LAUNCH();
 }
 

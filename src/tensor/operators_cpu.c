@@ -141,11 +141,12 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
     }
 }
 
-void gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+void gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
     const float a = 0.8f;
     for (int i = 0; i < n; i++) {
-        out[i] = grad[i] * ((1.0f + tanhf(a * x[i])) * (0.5f + a * (x[i] - y[i])));
+        float t = tanhf(a * x[i]);
+        out[i] = grad[i] * 0.5f * (1.0f + t) * (1.0f + a * x[i] * (1.0f - t));
     }
 }
 
@@ -197,6 +198,17 @@ void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *
     for (int pi = 0; pi < nparams; pi++) {
         adam_step(ps[pi], gs[pi], ms[pi], vs[pi], sizes[pi], lr, beta1, mb1, beta2, mb2, eps, bc1,
                   bc2);
+    }
+}
+
+void adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
+                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
+                      float eps, float bc1, float bc2, float weight_decay)
+{
+    (void)max_size;
+    for (int pi = 0; pi < nparams; pi++) {
+        adamw_step(ps[pi], gs[pi], ms[pi], vs[pi], sizes[pi], lr, beta1, mb1, beta2, mb2, eps, bc1,
+                   bc2, weight_decay);
     }
 }
 
