@@ -108,9 +108,35 @@ __global__ void k_softmax_axis_bwd(const float *dout, const float *y, float *dx,
     }
 }
 
+// Block-per-row softmax backward for contiguous rows (inner == 1, the common
+// case): the dot product over the row is a block reduction instead of a
+// per-thread serial loop, and the write pass is coalesced.
+__global__ void k_softmax_rows_bwd(const float *dout, const float *y, float *dx, int rows, int D)
+{
+    extern __shared__ float sh[];
+    int row = blockIdx.x;
+    if (row >= rows) return;
+
+    const float *dr = dout + (size_t)row * D;
+    const float *yr = y + (size_t)row * D;
+    float *dxr = dx + (size_t)row * D;
+
+    float part = 0.0f;
+    for (int j = threadIdx.x; j < D; j += blockDim.x) part += dr[j] * yr[j];
+    float dot = block_reduce_sum(part, sh);
+
+    for (int j = threadIdx.x; j < D; j += blockDim.x) dxr[j] = yr[j] * (dr[j] - dot);
+}
+
 extern "C" void softmax_axis_bwd(const float *dout, const float *y, float *dx, int outer, int inner,
                                  int axis_dim)
 {
+    if (inner == 1) {
+        k_softmax_rows_bwd<<<outer, TBLOCK, TBLOCK * sizeof(float), ember_stream()>>>(
+            dout, y, dx, outer, axis_dim);
+        CUDA_POST_LAUNCH();
+        return;
+    }
     int total = outer * inner;
     k_softmax_axis_bwd<<<grid1(total), TBLOCK, 0, ember_stream()>>>(dout, y, dx, outer, inner,
                                                                     axis_dim);

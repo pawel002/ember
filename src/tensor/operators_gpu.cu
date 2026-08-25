@@ -298,9 +298,72 @@ __global__ void k_sum_axis(const float *a, float *out, int outer_stride, int inn
     out[idx] = s;
 }
 
+__device__ __forceinline__ float block_reduce_sum(float v, float *sh)
+{
+    int tid = threadIdx.x;
+    sh[tid] = v;
+    __syncthreads();
+    for (int s = blockDim.x >> 1; s > 0; s >>= 1) {
+        if (tid < s) sh[tid] += sh[tid + s];
+        __syncthreads();
+    }
+    float r = sh[0];
+    __syncthreads();
+    return r;
+}
+
+// Contiguous last-axis reduction (inner_stride == 1): block-per-row with a
+// block reduction instead of a per-thread serial row loop.
+__global__ void k_sum_axis_rows(const float *a, float *out, int rows, int axis_dim)
+{
+    extern __shared__ float sh[];
+    int row = blockIdx.x;
+    if (row >= rows) return;
+
+    const float *ar = a + (size_t)row * axis_dim;
+    float part = 0.0f;
+    for (int j = threadIdx.x; j < axis_dim; j += blockDim.x) part += ar[j];
+    float s = block_reduce_sum(part, sh);
+    if (threadIdx.x == 0) out[row] = s;
+}
+
+// Few outputs but a long reduction axis (e.g. bias gradients: summing a
+// (16384, 256) activation over axis 0): a single thread per output cannot
+// fill the GPU, so split the axis over gridDim.y chunks and combine the
+// partials with atomicAdd. `out` must be zeroed before launch.
+__global__ void k_sum_axis_split(const float *a, float *out, int inner_stride, int axis_dim)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= inner_stride) return;
+    int o = blockIdx.z;
+
+    const float *base = a + ((size_t)o * axis_dim) * inner_stride + i;
+    float s = 0.0f;
+    for (int r = blockIdx.y; r < axis_dim; r += gridDim.y)
+        s += base[(size_t)r * inner_stride];
+    atomicAdd(&out[(size_t)o * inner_stride + i], s);
+}
+
 void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim)
 {
     int total = outer_stride * inner_stride;
+    if (inner_stride == 1) {
+        k_sum_axis_rows<<<outer_stride, BLOCK_SIZE, BLOCK_SIZE * sizeof(float), ember_stream()>>>(
+            a, out, outer_stride, axis_dim);
+        CUDA_POST_LAUNCH();
+        return;
+    }
+    if (total < (1 << 16) && axis_dim >= 256) {
+        // Aim for >= 64k threads in flight; capped so chunks stay sizeable.
+        int chunks = (1 << 16) / total;
+        if (chunks > 64) chunks = 64;
+        if (chunks > axis_dim) chunks = axis_dim;
+        dim3 g(grid(inner_stride), chunks, outer_stride);
+        GPU_ERR_CHK(cudaMemsetAsync(out, 0, (size_t)total * sizeof(float), ember_stream()));
+        k_sum_axis_split<<<g, BLOCK_SIZE, 0, ember_stream()>>>(a, out, inner_stride, axis_dim);
+        CUDA_POST_LAUNCH();
+        return;
+    }
     k_sum_axis<<<grid(total), BLOCK_SIZE, 0, ember_stream()>>>(a, out, outer_stride, inner_stride,
                                                                axis_dim);
     CUDA_POST_LAUNCH();
