@@ -209,5 +209,7 @@ __marimo__/
 # project files
 .vscode
 
-# downloaded datasets
-data/
+# downloaded datasets (anchored: an unanchored `data/` also swallows the
+# ember.data subpackage and tests/data)
+/data/
+/examples/tiny-gpt/data/
