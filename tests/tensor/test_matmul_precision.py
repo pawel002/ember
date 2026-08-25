@@ -76,3 +76,40 @@ class TestTransposedGemm:
         b = rng.standard_normal((4, 6)).astype(np.float32)
         got = mm(Tensor.from_np(a), Tensor.from_np(b), 8, 6, 4, alpha=2.5)
         np.testing.assert_allclose(got.to_np(), 2.5 * (a @ b), rtol=1e-5, atol=1e-6)
+
+
+class TestSumAxisReduction:
+    """``sum(x, axis=0)`` (the Linear bias gradient) takes a two-pass split
+    reduction for wide inputs and the simple kernel otherwise -- both paths, and
+    the shapes on either side of the switch, must agree with NumPy."""
+
+    @pytest.mark.parametrize(
+        "shape, axis",
+        [
+            ((16384, 256), 0),  # split path, tall
+            ((16384, 1024), 0),  # split path, wide
+            ((16384, 65), 0),  # split path, narrow
+            ((255, 256), 0),  # below the axis_dim threshold
+            ((333, 7), 0),
+            ((64, 128), 1),  # contiguous-row reduction
+            ((4, 5, 6), 1),  # middle axis
+            ((4, 5, 6), 0),
+            ((4, 5, 6), 2),
+            ((1, 1), 0),
+        ],
+    )
+    def test_matches_numpy(self, shape, axis):
+        rng = np.random.default_rng(0)
+        a = rng.standard_normal(shape).astype(np.float32)
+        got = em.sum(Tensor.from_np(a), axis=axis).to_np()
+        want = a.astype(np.float64).sum(axis)
+        np.testing.assert_allclose(got, want, rtol=1e-4, atol=1e-4)
+
+    def test_repeated_calls_do_not_accumulate(self):
+        # The split path writes partials into a pooled scratch buffer; a stale
+        # buffer would show up as a drifting result.
+        rng = np.random.default_rng(0)
+        a = Tensor.from_np(rng.standard_normal((16384, 256)).astype(np.float32))
+        first = em.sum(a, axis=0).to_np()
+        for _ in range(5):
+            np.testing.assert_array_equal(em.sum(a, axis=0).to_np(), first)

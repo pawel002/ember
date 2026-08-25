@@ -327,21 +327,37 @@ __global__ void k_sum_axis_rows(const float *a, float *out, int rows, int axis_d
     if (threadIdx.x == 0) out[row] = s;
 }
 
-// Few outputs but a long reduction axis (e.g. bias gradients: summing a
-// (16384, 256) activation over axis 0): a single thread per output cannot
-// fill the GPU, so split the axis over gridDim.y chunks and combine the
-// partials with atomicAdd. `out` must be zeroed before launch.
-__global__ void k_sum_axis_split(const float *a, float *out, int inner_stride, int axis_dim)
+// Few outputs but a long reduction axis (bias gradients: summing a
+// (16384, 256) activation over axis 0). One thread per output column cannot
+// keep enough loads in flight to saturate memory, so the axis is split over
+// `chunks` row-strips that reduce independently. Two passes rather than
+// atomics: the partials are tiny (chunks * inner_stride) and the combine pass
+// is essentially free, whereas atomics would funnel every block through the
+// same handful of L2 lines.
+__global__ void k_sum_axis_partial(const float *a, float *part, int inner_stride, int axis_dim,
+                                   int chunks)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= inner_stride) return;
+    int ch = blockIdx.y;
     int o = blockIdx.z;
 
     const float *base = a + ((size_t)o * axis_dim) * inner_stride + i;
     float s = 0.0f;
-    for (int r = blockIdx.y; r < axis_dim; r += gridDim.y)
-        s += base[(size_t)r * inner_stride];
-    atomicAdd(&out[(size_t)o * inner_stride + i], s);
+    for (int r = ch; r < axis_dim; r += chunks) s += base[(size_t)r * inner_stride];
+    part[(((size_t)o * chunks) + ch) * inner_stride + i] = s;
+}
+
+__global__ void k_sum_axis_combine(const float *part, float *out, int inner_stride, int chunks)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= inner_stride) return;
+    int o = blockIdx.y;
+
+    const float *p = part + ((size_t)o * chunks) * inner_stride + i;
+    float s = 0.0f;
+    for (int c = 0; c < chunks; c++) s += p[(size_t)c * inner_stride];
+    out[(size_t)o * inner_stride + i] = s;
 }
 
 void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim)
@@ -354,15 +370,33 @@ void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, in
         return;
     }
     if (total < (1 << 16) && axis_dim >= 256) {
-        // Aim for >= 64k threads in flight; capped so chunks stay sizeable.
-        int chunks = (1 << 16) / total;
-        if (chunks > 64) chunks = 64;
+        // Enough row-strips to keep loads in flight, but few enough that the
+        // combine pass (which has only `inner_stride` outputs to spread over
+        // the device) stays cheap. Measured optimum on Ada for the bias-
+        // gradient shapes; beyond ~256 strips the combine starts to dominate.
+        int cols = grid(inner_stride);
+        int chunks = 256 / (cols * outer_stride);
+        if (chunks < 1) chunks = 1;
+        if (chunks > 256) chunks = 256;
         if (chunks > axis_dim) chunks = axis_dim;
-        dim3 g(grid(inner_stride), chunks, outer_stride);
-        GPU_ERR_CHK(cudaMemsetAsync(out, 0, (size_t)total * sizeof(float), ember_stream()));
-        k_sum_axis_split<<<g, BLOCK_SIZE, 0, ember_stream()>>>(a, out, inner_stride, axis_dim);
-        CUDA_POST_LAUNCH();
-        return;
+        if (chunks > 1) {
+            size_t bytes = (size_t)outer_stride * chunks * inner_stride * sizeof(float);
+            float *part = (float *)alloc_memory(bytes);
+            if (part) {
+                dim3 g(cols, chunks, outer_stride);
+                k_sum_axis_partial<<<g, BLOCK_SIZE, 0, ember_stream()>>>(a, part, inner_stride,
+                                                                         axis_dim, chunks);
+                CUDA_POST_LAUNCH();
+                dim3 g2(cols, outer_stride);
+                k_sum_axis_combine<<<g2, BLOCK_SIZE, 0, ember_stream()>>>(part, out, inner_stride,
+                                                                          chunks);
+                CUDA_POST_LAUNCH();
+                // Single-stream ordering means the buffer cannot be handed out
+                // again before both kernels have run.
+                free_memory(part);
+                return;
+            }
+        }
     }
     k_sum_axis<<<grid(total), BLOCK_SIZE, 0, ember_stream()>>>(a, out, outer_stride, inner_stride,
                                                                axis_dim);
