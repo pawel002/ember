@@ -16,8 +16,14 @@
 // FLOPs but removes all of the score traffic, and attention here is firmly
 // bandwidth-bound.
 //
-// Layout: q/k/v/out are (batch, seq, head_dim) row-major with batch = B*heads;
-// lse is (batch, seq). `causal` masks key j > query i (decoder masking).
+// Layout: q/k/v/out hold `batch` = B*heads independent (seq, head_dim) matrices.
+// `nheads` and `sseq` describe how they are interleaved, which lets the kernels
+// read the multi-head tensors in place:
+//   nheads = 1,  sseq = head_dim        -> packed   (B*heads, seq, head_dim)
+//   nheads = H,  sseq = H * head_dim    -> attention's natural (B, seq, H, dh)
+// The second form is what removes the four transpose-to-heads permutations per
+// attention forward and four more per backward -- ~1.2 ms/step on tiny-gpt.
+// `lse` is always packed (batch, seq). `causal` masks key j > query i.
 
 #include <cuda_runtime.h>
 #include <math.h>
@@ -50,6 +56,15 @@ __device__ __forceinline__ float fa_row_sum16(float v)
     return v;
 }
 
+// Offset of batch-head `bat`'s first row. With nheads == 1 this is the packed
+// layout; with nheads == H it walks the (B, seq, H, head_dim) tensor.
+__device__ __forceinline__ size_t fa_base(size_t bat, int nheads, int dh, int seq, int sseq)
+{
+    size_t b = bat / (size_t)nheads;
+    size_t h = bat % (size_t)nheads;
+    return b * (size_t)seq * (size_t)sseq + h * (size_t)dh;
+}
+
 /* ===================== forward ===================== */
 
 // One block per (query tile, batch). BR queries stay resident; the key/value
@@ -57,7 +72,8 @@ __device__ __forceinline__ float fa_row_sum16(float v)
 template <int DH, int BR, int BC>
 __global__ void k_flash_fwd(const float *__restrict__ Q, const float *__restrict__ K,
                             const float *__restrict__ V, float *__restrict__ O,
-                            float *__restrict__ LSE, int sq, int sk, float scale, int causal)
+                            float *__restrict__ LSE, int sq, int sk, float scale, int causal,
+                            int nheads, int sseq)
 {
     constexpr int RPT = BR / FA_TY;  // query rows per thread
     constexpr int CPT = BC / FA_TX;  // key columns per thread
@@ -77,15 +93,19 @@ __global__ void k_flash_fwd(const float *__restrict__ Q, const float *__restrict
     const int q0 = blockIdx.x * BR;
     const size_t bat = blockIdx.y;
 
-    const float *Qb = Q + bat * (size_t)sq * DH;
-    const float *Kb = K + bat * (size_t)sk * DH;
-    const float *Vb = V + bat * (size_t)sk * DH;
-    float *Ob = O + bat * (size_t)sq * DH;
+    // Split the flat batch index back into (sample, head) so the head offset
+    // and the row stride can address an interleaved layout in place.
+    const size_t qoff = fa_base(bat, nheads, DH, sq, sseq);
+    const size_t koff = fa_base(bat, nheads, DH, sk, sseq);
+    const float *Qb = Q + qoff;
+    const float *Kb = K + koff;
+    const float *Vb = V + koff;
+    float *Ob = O + qoff;
     float *LSEb = LSE + bat * (size_t)sq;
 
     for (int i = tid; i < BR * DH; i += FA_NT) {
         int r = i / DH, d = i - r * DH;
-        sQ[i] = (q0 + r < sq) ? Qb[(size_t)(q0 + r) * DH + d] : 0.0f;
+        sQ[i] = (q0 + r < sq) ? Qb[(size_t)(q0 + r) * sseq + d] : 0.0f;
     }
 
     float acc[RPT][DPT];
@@ -106,9 +126,9 @@ __global__ void k_flash_fwd(const float *__restrict__ Q, const float *__restrict
         for (int i = tid; i < BC * DH; i += FA_NT) {
             int c = i / DH, d = i - c * DH;
             int j = j0 + c;
-            float kv = (j < sk) ? Kb[(size_t)j * DH + d] : 0.0f;
+            float kv = (j < sk) ? Kb[(size_t)j * sseq + d] : 0.0f;
             sKt[d * KS + c] = kv;
-            sV[i] = (j < sk) ? Vb[(size_t)j * DH + d] : 0.0f;
+            sV[i] = (j < sk) ? Vb[(size_t)j * sseq + d] : 0.0f;
         }
         __syncthreads();
 
@@ -196,7 +216,7 @@ __global__ void k_flash_fwd(const float *__restrict__ Q, const float *__restrict
         if (r >= sq) continue;
         float inv = run_l[p] > 0.0f ? 1.0f / run_l[p] : 0.0f;
 #pragma unroll
-        for (int e = 0; e < DPT; ++e) Ob[(size_t)r * DH + tx + e * FA_TX] = acc[p][e] * inv;
+        for (int e = 0; e < DPT; ++e) Ob[(size_t)r * sseq + tx + e * FA_TX] = acc[p][e] * inv;
         if (tx == 0) LSEb[r] = run_l[p] > 0.0f ? (run_m[p] + __logf(run_l[p])) : -INFINITY;
     }
 }
@@ -206,14 +226,17 @@ __global__ void k_flash_fwd(const float *__restrict__ Q, const float *__restrict
 // D[r] = sum_d dO[r,d] * O[r,d] -- the term that turns dP into dS. One warp per
 // row; four rows per block.
 __global__ void k_flash_rowdot(const float *__restrict__ dO, const float *__restrict__ O,
-                               float *__restrict__ D, int rows, int dh)
+                               float *__restrict__ D, int rows, int dh, int sq, int nheads,
+                               int sseq)
 {
     int warp = (blockIdx.x * blockDim.x + threadIdx.x) >> 5;
     int lane = threadIdx.x & 31;
     if (warp >= rows) return;
 
-    const float *a = dO + (size_t)warp * dh;
-    const float *b = O + (size_t)warp * dh;
+    // D is packed (batch, sq); dO/O follow the caller's interleaved layout.
+    size_t off = fa_base(warp / sq, nheads, dh, sq, sseq) + (size_t)(warp % sq) * sseq;
+    const float *a = dO + off;
+    const float *b = O + off;
     float s = 0.0f;
     for (int d = lane; d < dh; d += 32) s += a[d] * b[d];
 #pragma unroll
@@ -228,7 +251,7 @@ __global__ void k_flash_bwd_kv(const float *__restrict__ dO, const float *__rest
                                const float *__restrict__ K, const float *__restrict__ V,
                                const float *__restrict__ LSE, const float *__restrict__ D,
                                float *__restrict__ dK, float *__restrict__ dV, int sq, int sk,
-                               float scale, int causal)
+                               float scale, int causal, int nheads, int sseq)
 {
     constexpr int RPT = BR / FA_TY;  // query rows per thread (score tile)
     constexpr int CPT = BC / FA_TX;  // key columns per thread (score tile)
@@ -252,20 +275,22 @@ __global__ void k_flash_bwd_kv(const float *__restrict__ dO, const float *__rest
     const int j0 = blockIdx.x * BC;
     const size_t bat = blockIdx.y;
 
-    const float *Qb = Q + bat * (size_t)sq * DH;
-    const float *dOb = dO + bat * (size_t)sq * DH;
-    const float *Kb = K + bat * (size_t)sk * DH;
-    const float *Vb = V + bat * (size_t)sk * DH;
+    const size_t qoff = fa_base(bat, nheads, DH, sq, sseq);
+    const size_t koff = fa_base(bat, nheads, DH, sk, sseq);
+    const float *Qb = Q + qoff;
+    const float *dOb = dO + qoff;
+    const float *Kb = K + koff;
+    const float *Vb = V + koff;
     const float *LSEb = LSE + bat * (size_t)sq;
     const float *Db = D + bat * (size_t)sq;
-    float *dKb = dK + bat * (size_t)sk * DH;
-    float *dVb = dV + bat * (size_t)sk * DH;
+    float *dKb = dK + koff;
+    float *dVb = dV + koff;
 
     for (int i = tid; i < BC * DH; i += FA_NT) {
         int c = i / DH, d = i - c * DH;
         int j = j0 + c;
-        sKt[d * KS + c] = (j < sk) ? Kb[(size_t)j * DH + d] : 0.0f;
-        sVt[d * KS + c] = (j < sk) ? Vb[(size_t)j * DH + d] : 0.0f;
+        sKt[d * KS + c] = (j < sk) ? Kb[(size_t)j * sseq + d] : 0.0f;
+        sVt[d * KS + c] = (j < sk) ? Vb[(size_t)j * sseq + d] : 0.0f;
     }
 
     float accK[APT][DPT], accV[APT][DPT];
@@ -286,8 +311,8 @@ __global__ void k_flash_bwd_kv(const float *__restrict__ dO, const float *__rest
         for (int i = tid; i < BR * DH; i += FA_NT) {
             int r = i / DH, d = i - r * DH;
             int qi = i0 + r;
-            sQ[i] = (qi < sq) ? Qb[(size_t)qi * DH + d] : 0.0f;
-            sdO[i] = (qi < sq) ? dOb[(size_t)qi * DH + d] : 0.0f;
+            sQ[i] = (qi < sq) ? Qb[(size_t)qi * sseq + d] : 0.0f;
+            sdO[i] = (qi < sq) ? dOb[(size_t)qi * sseq + d] : 0.0f;
         }
         for (int r = tid; r < BR; r += FA_NT) {
             int qi = i0 + r;
@@ -386,7 +411,7 @@ __global__ void k_flash_bwd_kv(const float *__restrict__ dO, const float *__rest
         if (j >= sk) continue;
 #pragma unroll
         for (int e = 0; e < DPT; ++e) {
-            size_t off = (size_t)j * DH + tx + e * FA_TX;
+            size_t off = (size_t)j * sseq + tx + e * FA_TX;
             dKb[off] = accK[a][e] * scale;
             dVb[off] = accV[a][e];
         }
@@ -400,7 +425,8 @@ template <int DH, int BR, int BC>
 __global__ void k_flash_bwd_q(const float *__restrict__ dO, const float *__restrict__ Q,
                               const float *__restrict__ K, const float *__restrict__ V,
                               const float *__restrict__ LSE, const float *__restrict__ D,
-                              float *__restrict__ dQ, int sq, int sk, float scale, int causal)
+                              float *__restrict__ dQ, int sq, int sk, float scale, int causal,
+                              int nheads, int sseq)
 {
     constexpr int RPT = BR / FA_TY;
     constexpr int CPT = BC / FA_TX;
@@ -423,19 +449,21 @@ __global__ void k_flash_bwd_q(const float *__restrict__ dO, const float *__restr
     const int q0 = blockIdx.x * BR;
     const size_t bat = blockIdx.y;
 
-    const float *Qb = Q + bat * (size_t)sq * DH;
-    const float *dOb = dO + bat * (size_t)sq * DH;
-    const float *Kb = K + bat * (size_t)sk * DH;
-    const float *Vb = V + bat * (size_t)sk * DH;
+    const size_t qoff = fa_base(bat, nheads, DH, sq, sseq);
+    const size_t koff = fa_base(bat, nheads, DH, sk, sseq);
+    const float *Qb = Q + qoff;
+    const float *dOb = dO + qoff;
+    const float *Kb = K + koff;
+    const float *Vb = V + koff;
     const float *LSEb = LSE + bat * (size_t)sq;
     const float *Db = D + bat * (size_t)sq;
-    float *dQb = dQ + bat * (size_t)sq * DH;
+    float *dQb = dQ + qoff;
 
     for (int i = tid; i < BR * DH; i += FA_NT) {
         int r = i / DH, d = i - r * DH;
         int qi = q0 + r;
-        sQ[i] = (qi < sq) ? Qb[(size_t)qi * DH + d] : 0.0f;
-        sdO[i] = (qi < sq) ? dOb[(size_t)qi * DH + d] : 0.0f;
+        sQ[i] = (qi < sq) ? Qb[(size_t)qi * sseq + d] : 0.0f;
+        sdO[i] = (qi < sq) ? dOb[(size_t)qi * sseq + d] : 0.0f;
     }
     for (int r = tid; r < BR; r += FA_NT) {
         int qi = q0 + r;
@@ -456,8 +484,8 @@ __global__ void k_flash_bwd_q(const float *__restrict__ dO, const float *__restr
         for (int i = tid; i < BC * DH; i += FA_NT) {
             int c = i / DH, d = i - c * DH;
             int j = j0 + c;
-            sKt[d * KS + c] = (j < sk) ? Kb[(size_t)j * DH + d] : 0.0f;
-            sVt[d * KS + c] = (j < sk) ? Vb[(size_t)j * DH + d] : 0.0f;
+            sKt[d * KS + c] = (j < sk) ? Kb[(size_t)j * sseq + d] : 0.0f;
+            sVt[d * KS + c] = (j < sk) ? Vb[(size_t)j * sseq + d] : 0.0f;
         }
         __syncthreads();
 
@@ -524,7 +552,7 @@ __global__ void k_flash_bwd_q(const float *__restrict__ dO, const float *__restr
         int r = q0 + ty + p * FA_TY;
         if (r >= sq) continue;
 #pragma unroll
-        for (int e = 0; e < DPT; ++e) dQb[(size_t)r * DH + tx + e * FA_TX] = acc[p][e] * scale;
+        for (int e = 0; e < DPT; ++e) dQb[(size_t)r * sseq + tx + e * FA_TX] = acc[p][e] * scale;
     }
 }
 
@@ -558,7 +586,7 @@ static bool fa_raise_shared(const void *fn, size_t bytes)
 
 template <int DH>
 static void fa_fwd_launch(const float *q, const float *k, const float *v, float *out, float *lse,
-                          int batch, int sq, int sk, float scale, int causal)
+                          int batch, int sq, int sk, float scale, int causal, int nheads, int sseq)
 {
     constexpr int BR = fa_cfg<DH>::BR_FWD;
     constexpr int BC = fa_cfg<DH>::BC;
@@ -566,14 +594,15 @@ static void fa_fwd_launch(const float *q, const float *k, const float *v, float 
     auto fn = k_flash_fwd<DH, BR, BC>;
     fa_raise_shared((const void *)fn, bytes);
     dim3 grid((sq + BR - 1) / BR, batch);
-    fn<<<grid, FA_NT, bytes, ember_stream()>>>(q, k, v, out, lse, sq, sk, scale, causal);
+    fn<<<grid, FA_NT, bytes, ember_stream()>>>(q, k, v, out, lse, sq, sk, scale, causal, nheads,
+                                               sseq);
     FA_POST_LAUNCH();
 }
 
 template <int DH>
 static void fa_bwd_launch(const float *dout, const float *q, const float *k, const float *v,
                           const float *lse, const float *rowdot, float *dq, float *dk, float *dv,
-                          int batch, int sq, int sk, float scale, int causal)
+                          int batch, int sq, int sk, float scale, int causal, int nheads, int sseq)
 {
     constexpr int BR = fa_cfg<DH>::BR_BWD;
     constexpr int BC = fa_cfg<DH>::BC;
@@ -585,7 +614,7 @@ static void fa_bwd_launch(const float *dout, const float *q, const float *k, con
         fa_raise_shared((const void *)fn, bytes);
         dim3 grid((sk + BC - 1) / BC, batch);
         fn<<<grid, FA_NT, bytes, ember_stream()>>>(dout, q, k, v, lse, rowdot, dk, dv, sq, sk,
-                                                   scale, causal);
+                                                   scale, causal, nheads, sseq);
         FA_POST_LAUNCH();
     }
     {
@@ -595,7 +624,7 @@ static void fa_bwd_launch(const float *dout, const float *q, const float *k, con
         fa_raise_shared((const void *)fn, bytes);
         dim3 grid((sq + BR - 1) / BR, batch);
         fn<<<grid, FA_NT, bytes, ember_stream()>>>(dout, q, k, v, lse, rowdot, dq, sq, sk, scale,
-                                                   causal);
+                                                   causal, nheads, sseq);
         FA_POST_LAUNCH();
     }
 }
@@ -608,20 +637,20 @@ int attention_supported(int dh)
 }
 
 void attention_fwd(const float *q, const float *k, const float *v, float *out, float *lse,
-                   int batch, int sq, int sk, int dh, float scale, int causal)
+                   int batch, int sq, int sk, int dh, float scale, int causal, int nheads, int sseq)
 {
     switch (dh) {
         case 16:
-            fa_fwd_launch<16>(q, k, v, out, lse, batch, sq, sk, scale, causal);
+            fa_fwd_launch<16>(q, k, v, out, lse, batch, sq, sk, scale, causal, nheads, sseq);
             break;
         case 32:
-            fa_fwd_launch<32>(q, k, v, out, lse, batch, sq, sk, scale, causal);
+            fa_fwd_launch<32>(q, k, v, out, lse, batch, sq, sk, scale, causal, nheads, sseq);
             break;
         case 64:
-            fa_fwd_launch<64>(q, k, v, out, lse, batch, sq, sk, scale, causal);
+            fa_fwd_launch<64>(q, k, v, out, lse, batch, sq, sk, scale, causal, nheads, sseq);
             break;
         case 128:
-            fa_fwd_launch<128>(q, k, v, out, lse, batch, sq, sk, scale, causal);
+            fa_fwd_launch<128>(q, k, v, out, lse, batch, sq, sk, scale, causal, nheads, sseq);
             break;
         default:
             break;  // caller must check attention_supported()
@@ -630,25 +659,31 @@ void attention_fwd(const float *q, const float *k, const float *v, float *out, f
 
 void attention_bwd(const float *dout, const float *q, const float *k, const float *v,
                    const float *out, const float *lse, float *rowdot, float *dq, float *dk,
-                   float *dv, int batch, int sq, int sk, int dh, float scale, int causal)
+                   float *dv, int batch, int sq, int sk, int dh, float scale, int causal,
+                   int nheads, int sseq)
 {
     int rows = batch * sq;
     // 4 warps per block, one row each.
-    k_flash_rowdot<<<(rows + 3) / 4, 128, 0, ember_stream()>>>(dout, out, rowdot, rows, dh);
+    k_flash_rowdot<<<(rows + 3) / 4, 128, 0, ember_stream()>>>(dout, out, rowdot, rows, dh, sq,
+                                                               nheads, sseq);
     FA_POST_LAUNCH();
 
     switch (dh) {
         case 16:
-            fa_bwd_launch<16>(dout, q, k, v, lse, rowdot, dq, dk, dv, batch, sq, sk, scale, causal);
+            fa_bwd_launch<16>(dout, q, k, v, lse, rowdot, dq, dk, dv, batch, sq, sk, scale, causal,
+                              nheads, sseq);
             break;
         case 32:
-            fa_bwd_launch<32>(dout, q, k, v, lse, rowdot, dq, dk, dv, batch, sq, sk, scale, causal);
+            fa_bwd_launch<32>(dout, q, k, v, lse, rowdot, dq, dk, dv, batch, sq, sk, scale, causal,
+                              nheads, sseq);
             break;
         case 64:
-            fa_bwd_launch<64>(dout, q, k, v, lse, rowdot, dq, dk, dv, batch, sq, sk, scale, causal);
+            fa_bwd_launch<64>(dout, q, k, v, lse, rowdot, dq, dk, dv, batch, sq, sk, scale, causal,
+                              nheads, sseq);
             break;
         case 128:
-            fa_bwd_launch<128>(dout, q, k, v, lse, rowdot, dq, dk, dv, batch, sq, sk, scale, causal);
+            fa_bwd_launch<128>(dout, q, k, v, lse, rowdot, dq, dk, dv, batch, sq, sk, scale, causal,
+                               nheads, sseq);
             break;
         default:
             break;

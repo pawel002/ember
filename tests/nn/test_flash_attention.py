@@ -40,11 +40,16 @@ def _ref(q, k, v, dout, scale, causal):
     return o, (m + np.log(l))[..., 0], dq, dk, dv
 
 
-def _run(q, k, v, dout, scale, causal):
+def _run(q, k, v, dout, scale, causal, nheads=1):
+    """Run the kernels over a packed (batch, seq, head_dim) layout.
+
+    ``nheads=1`` / ``sseq=head_dim`` is the packed form; the layer uses
+    ``nheads=H`` / ``sseq=H*head_dim`` to read (B, seq, H, dh) in place.
+    """
     b, s, dh = q.shape
     qt, kt, vt, gt = (Tensor.from_np(a.reshape(-1, dh)) for a in (q, k, v, dout))
     o_c, lse_c = _attention_fwd(
-        qt._core, kt._core, vt._core, b, s, s, dh, scale, causal
+        qt._core, kt._core, vt._core, b, s, s, dh, scale, causal, nheads, dh * nheads
     )
     dq_c, dk_c, dv_c = _attention_bwd(
         gt._core,
@@ -59,6 +64,8 @@ def _run(q, k, v, dout, scale, causal):
         dh,
         scale,
         causal,
+        nheads,
+        dh * nheads,
     )
     out = [Tensor._from_core(o_c, (b, s, dh), "float32").to_np()]
     out.append(Tensor._from_core(lse_c, (b, s), "float32").to_np())
@@ -99,6 +106,67 @@ class TestFlashAttention:
             np.testing.assert_allclose(
                 g, w, rtol=3e-5, atol=1e-5, err_msg=f"{name} mismatch"
             )
+
+    @pytest.mark.parametrize("causal", [True, False])
+    def test_interleaved_layout_matches_packed(self, causal):
+        """The same numbers whether the heads are packed (batch-major) or
+        interleaved as (B, seq, H, head_dim) -- the layout the layer uses."""
+        rng = np.random.default_rng(3)
+        b, heads, seq, dh = 2, 4, 48, 32
+        e = heads * dh
+        shape = (b, seq, heads, dh)
+        q, k, v, dout = (
+            rng.standard_normal(shape).astype(np.float32) for _ in range(4)
+        )
+        scale = 1.0 / np.sqrt(dh)
+
+        # interleaved: pass the tensors as-is with nheads=heads
+        qt, kt, vt, gt = (Tensor.from_np(a.reshape(-1, dh)) for a in (q, k, v, dout))
+        o_c, lse_c = _attention_fwd(
+            qt._core,
+            kt._core,
+            vt._core,
+            b * heads,
+            seq,
+            seq,
+            dh,
+            scale,
+            causal,
+            heads,
+            e,
+        )
+        dq_c, _, _ = _attention_bwd(
+            gt._core,
+            qt._core,
+            kt._core,
+            vt._core,
+            o_c,
+            lse_c,
+            b * heads,
+            seq,
+            seq,
+            dh,
+            scale,
+            causal,
+            heads,
+            e,
+        )
+        o_i = Tensor._from_core(o_c, (b, seq, heads, dh), "float32").to_np()
+        dq_i = Tensor._from_core(dq_c, (b, seq, heads, dh), "float32").to_np()
+
+        # packed: transpose to (b*heads, seq, dh) first
+        def pack(a):
+            return np.ascontiguousarray(a.transpose(0, 2, 1, 3)).reshape(
+                b * heads, seq, dh
+            )
+
+        o_p, _, dq_p, _, _ = _run(pack(q), pack(k), pack(v), pack(dout), scale, causal)
+
+        def unpack(a):
+            return a.reshape(b, heads, seq, dh).transpose(0, 2, 1, 3)
+
+        np.testing.assert_allclose(o_i, unpack(o_p), rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(dq_i, unpack(dq_p), rtol=1e-6, atol=1e-6)
 
     def test_causal_first_row_ignores_later_keys(self):
         """Query 0 attends only to key 0, so its output must equal v[0]."""

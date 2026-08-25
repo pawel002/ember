@@ -15,17 +15,24 @@ int attention_supported(int dh)
     return 1;
 }
 
+/* Offset of batch-head `bat`'s first row; see the layout note in
+ * transformer.h. */
+static size_t fa_base(int bat, int nheads, int dh, int seq, int sseq)
+{
+    return (size_t)(bat / nheads) * seq * sseq + (size_t)(bat % nheads) * dh;
+}
+
 void attention_fwd(const float *q, const float *k, const float *v, float *out, float *lse,
-                   int batch, int sq, int sk, int dh, float scale, int causal)
+                   int batch, int sq, int sk, int dh, float scale, int causal, int nheads, int sseq)
 {
     float *p = (float *)malloc((size_t)sk * sizeof(float));
     if (!p) return;
 
     for (int b = 0; b < batch; b++) {
-        const float *qb = q + (size_t)b * sq * dh;
-        const float *kb = k + (size_t)b * sk * dh;
-        const float *vb = v + (size_t)b * sk * dh;
-        float *ob = out + (size_t)b * sq * dh;
+        const float *qb = q + fa_base(b, nheads, dh, sq, sseq);
+        const float *kb = k + fa_base(b, nheads, dh, sk, sseq);
+        const float *vb = v + fa_base(b, nheads, dh, sk, sseq);
+        float *ob = out + fa_base(b, nheads, dh, sq, sseq);
         float *lb = lse + (size_t)b * sq;
 
         for (int i = 0; i < sq; i++) {
@@ -34,7 +41,7 @@ void attention_fwd(const float *q, const float *k, const float *v, float *out, f
             for (int j = 0; j < limit; j++) {
                 float s = 0.0f;
                 for (int d = 0; d < dh; d++)
-                    s += qb[(size_t)i * dh + d] * kb[(size_t)j * dh + d];
+                    s += qb[(size_t)i * sseq + d] * kb[(size_t)j * sseq + d];
                 p[j] = s * scale;
                 if (p[j] > m) m = p[j];
             }
@@ -46,8 +53,8 @@ void attention_fwd(const float *q, const float *k, const float *v, float *out, f
             float inv = l > 0.0f ? 1.0f / l : 0.0f;
             for (int d = 0; d < dh; d++) {
                 float acc = 0.0f;
-                for (int j = 0; j < limit; j++) acc += p[j] * vb[(size_t)j * dh + d];
-                ob[(size_t)i * dh + d] = acc * inv;
+                for (int j = 0; j < limit; j++) acc += p[j] * vb[(size_t)j * sseq + d];
+                ob[(size_t)i * sseq + d] = acc * inv;
             }
             lb[i] = l > 0.0f ? (m + logf(l)) : -INFINITY;
         }
@@ -57,11 +64,13 @@ void attention_fwd(const float *q, const float *k, const float *v, float *out, f
 
 void attention_bwd(const float *dout, const float *q, const float *k, const float *v,
                    const float *out, const float *lse, float *rowdot, float *dq, float *dk,
-                   float *dv, int batch, int sq, int sk, int dh, float scale, int causal)
+                   float *dv, int batch, int sq, int sk, int dh, float scale, int causal,
+                   int nheads, int sseq)
 {
-    memset(dq, 0, (size_t)batch * sq * dh * sizeof(float));
-    memset(dk, 0, (size_t)batch * sk * dh * sizeof(float));
-    memset(dv, 0, (size_t)batch * sk * dh * sizeof(float));
+    size_t nb = (size_t)(batch / nheads);
+    memset(dq, 0, nb * sq * sseq * sizeof(float));
+    memset(dk, 0, nb * sk * sseq * sizeof(float));
+    memset(dv, 0, nb * sk * sseq * sizeof(float));
 
     float *p = (float *)malloc((size_t)sk * sizeof(float));
     float *ds = (float *)malloc((size_t)sk * sizeof(float));
@@ -72,44 +81,44 @@ void attention_bwd(const float *dout, const float *q, const float *k, const floa
     }
 
     for (int b = 0; b < batch; b++) {
-        const float *qb = q + (size_t)b * sq * dh;
-        const float *kb = k + (size_t)b * sk * dh;
-        const float *vb = v + (size_t)b * sk * dh;
-        const float *gb = dout + (size_t)b * sq * dh;
-        const float *ob = out + (size_t)b * sq * dh;
+        const float *qb = q + fa_base(b, nheads, dh, sq, sseq);
+        const float *kb = k + fa_base(b, nheads, dh, sk, sseq);
+        const float *vb = v + fa_base(b, nheads, dh, sk, sseq);
+        const float *gb = dout + fa_base(b, nheads, dh, sq, sseq);
+        const float *ob = out + fa_base(b, nheads, dh, sq, sseq);
         const float *lb = lse + (size_t)b * sq;
-        float *dqb = dq + (size_t)b * sq * dh;
-        float *dkb = dk + (size_t)b * sk * dh;
-        float *dvb = dv + (size_t)b * sk * dh;
+        float *dqb = dq + fa_base(b, nheads, dh, sq, sseq);
+        float *dkb = dk + fa_base(b, nheads, dh, sk, sseq);
+        float *dvb = dv + fa_base(b, nheads, dh, sk, sseq);
         float *rd = rowdot + (size_t)b * sq;
 
         for (int i = 0; i < sq; i++) {
             int limit = causal ? (i + 1 < sk ? i + 1 : sk) : sk;
 
             float d_i = 0.0f;
-            for (int d = 0; d < dh; d++) d_i += gb[(size_t)i * dh + d] * ob[(size_t)i * dh + d];
+            for (int d = 0; d < dh; d++) d_i += gb[(size_t)i * sseq + d] * ob[(size_t)i * sseq + d];
             rd[i] = d_i;
 
             for (int j = 0; j < limit; j++) {
                 float s = 0.0f;
                 for (int d = 0; d < dh; d++)
-                    s += qb[(size_t)i * dh + d] * kb[(size_t)j * dh + d];
+                    s += qb[(size_t)i * sseq + d] * kb[(size_t)j * sseq + d];
                 p[j] = (lb[i] == -INFINITY) ? 0.0f : expf(s * scale - lb[i]);
             }
 
             for (int j = 0; j < limit; j++) {
                 float dp = 0.0f;
                 for (int d = 0; d < dh; d++)
-                    dp += gb[(size_t)i * dh + d] * vb[(size_t)j * dh + d];
+                    dp += gb[(size_t)i * sseq + d] * vb[(size_t)j * sseq + d];
                 ds[j] = p[j] * (dp - d_i);
                 for (int d = 0; d < dh; d++)
-                    dvb[(size_t)j * dh + d] += p[j] * gb[(size_t)i * dh + d];
+                    dvb[(size_t)j * sseq + d] += p[j] * gb[(size_t)i * sseq + d];
             }
 
             for (int j = 0; j < limit; j++) {
                 for (int d = 0; d < dh; d++) {
-                    dqb[(size_t)i * dh + d] += scale * ds[j] * kb[(size_t)j * dh + d];
-                    dkb[(size_t)j * dh + d] += scale * ds[j] * qb[(size_t)i * dh + d];
+                    dqb[(size_t)i * sseq + d] += scale * ds[j] * kb[(size_t)j * sseq + d];
+                    dkb[(size_t)j * sseq + d] += scale * ds[j] * qb[(size_t)i * sseq + d];
                 }
             }
         }

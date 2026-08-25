@@ -29,7 +29,11 @@ class MultiHeadAttention(Layer):
     The attention itself uses the fused ("flash") kernel when the backend has
     one for this ``head_dim``: scores are tiled through shared memory and never
     materialized, which for a seq-256 model removes ~1.5 GB of memory traffic
-    per block per step. Otherwise it falls back to the composed path -- batched
+    per block per step. That path also reads the projections in their natural
+    ``(batch, seq, heads, head_dim)`` layout, so the split-into-heads transpose
+    (four copies forward, four more backward) disappears with it.
+
+    Otherwise it falls back to the composed path -- transpose to heads, batched
     GEMM, fused row-softmax with the causal mask folded in, batched GEMM --
     which materializes the ``(seq, seq)`` score matrix.
     """
@@ -52,9 +56,10 @@ class MultiHeadAttention(Layer):
         self.wk = Linear(self.embed_dim, self.embed_dim)
         self.wv = Linear(self.embed_dim, self.embed_dim)
         self.wo = Linear(self.embed_dim, self.embed_dim)
-        # cached activations for backward
+        # cached activations for backward: the fused path keeps the untransposed
+        # projections, the composed path their head-major copies.
+        self._q = self._k = self._v = self._o = self._lse = None
         self._qh = self._kh = self._vh = self._p = None
-        self._o = self._lse = None
         self._shape: tuple[int, int, int] | None = None
 
     def parameters(self) -> list[Tensor]:
@@ -93,24 +98,26 @@ class MultiHeadAttention(Layer):
         k = self.wk(x2, training)
         v = self.wv(x2, training)
 
-        qh = self._to_heads(q, B, S)
-        kh = self._to_heads(k, B, S)
-        vh = self._to_heads(v, B, S)
-        self._qh, self._kh, self._vh = qh, kh, vh
-
         if self.fused:
             # One kernel: scores, softmax and P@V, tiled through shared memory.
             # `lse` (the per-row log-sum-exp) is what lets backward rebuild the
-            # softmax without the score matrix ever existing.
+            # softmax without the score matrix ever existing. The trailing
+            # (H, E) arguments describe the interleaving, so the kernel walks
+            # q/k/v as (B, S, H, dh) in place -- nothing is copied into
+            # head-major order, and the output comes back in the same layout.
             o_core, lse_core = _attention_fwd(
-                qh._core, kh._core, vh._core, BH, S, S, dh, self.scale, self.causal
+                q._core, k._core, v._core, BH, S, S, dh, self.scale, self.causal, H, E
             )
-            o = Tensor._from_core(o_core, (BH, S, dh), x.dtype)
-            self._o = o
+            self._q, self._k, self._v = q, k, v
+            self._o = Tensor._from_core(o_core, (B * S, E), x.dtype)
             self._lse = Tensor._from_core(lse_core, (BH, S), x.dtype)
-            out2 = self.wo(self._from_heads(o, B, S), training)  # (B*S, E)
+            out2 = self.wo(self._o, training)  # (B*S, E)
             self.y = view(out2, (B, S, E))
             return self.y
+
+        qh = self._to_heads(q, B, S)
+        kh = self._to_heads(k, B, S)
+        vh = self._to_heads(v, B, S)
 
         # scores = scale * Q @ K^T  ->  (B*H, S, S)
         scores = bmm(
@@ -126,6 +133,7 @@ class MultiHeadAttention(Layer):
 
         # O = P @ V  ->  (B*H, S, dh)
         o = bmm(self._p, vh, BH, S, dh, S)
+        self._qh, self._kh, self._vh = qh, kh, vh
 
         out2 = self.wo(self._from_heads(o, B, S), training)  # (B*S, E)
         self.y = view(out2, (B, S, E))
@@ -140,15 +148,15 @@ class MultiHeadAttention(Layer):
         g2 = view(grad_y, (B * S, E))
         do2 = self.wo.backward(g2)  # dL/d(concat heads), (B*S, E)
 
-        do = self._to_heads(do2, B, S)  # (B*H, S, dh)
-
         if self.fused:
             assert self._o is not None and self._lse is not None
+            # Same interleaved layout on the way in and out: dq/dk/dv land as
+            # (B*S, E) and feed the projections directly.
             dq_c, dk_c, dv_c = _attention_bwd(
-                do._core,
-                self._qh._core,
-                self._kh._core,
-                self._vh._core,
+                do2._core,
+                self._q._core,
+                self._k._core,
+                self._v._core,
                 self._o._core,
                 self._lse._core,
                 BH,
@@ -157,15 +165,16 @@ class MultiHeadAttention(Layer):
                 dh,
                 self.scale,
                 self.causal,
+                H,
+                E,
             )
             dtype = grad_y.dtype
-            dq = Tensor._from_core(dq_c, (BH, S, dh), dtype)
-            dk = Tensor._from_core(dk_c, (BH, S, dh), dtype)
-            dv = Tensor._from_core(dv_c, (BH, S, dh), dtype)
-            dxq = self.wq.backward(self._from_heads(dq, B, S))
-            dxk = self.wk.backward(self._from_heads(dk, B, S))
-            dxv = self.wv.backward(self._from_heads(dv, B, S))
+            dxq = self.wq.backward(Tensor._from_core(dq_c, (B * S, E), dtype))
+            dxk = self.wk.backward(Tensor._from_core(dk_c, (B * S, E), dtype))
+            dxv = self.wv.backward(Tensor._from_core(dv_c, (B * S, E), dtype))
             return view(dxq + dxk + dxv, (B, S, E))
+
+        do = self._to_heads(do2, B, S)  # (B*H, S, dh)
 
         # dP = dO @ V^T ; dV = P^T @ dO
         dp = bmm(do, self._vh, BH, S, S, dh, trans_a=False, trans_b=True)

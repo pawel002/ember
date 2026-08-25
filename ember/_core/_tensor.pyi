@@ -208,7 +208,6 @@ def _adam_step_group(
     bc1: float,
     bc2: float,
 ) -> None: ...
-
 def _adamw_step_group(
     params: list[_Tensor],
     grads: list[_Tensor],
@@ -277,6 +276,8 @@ def _attention_fwd(
     head_dim: int,
     scale: float,
     causal: bool,
+    nheads: int,
+    seq_stride: int,
 ) -> tuple[_Tensor, _Tensor]: ...
 def _attention_bwd(
     dout: _Tensor,
@@ -291,4 +292,6 @@ def _attention_bwd(
     head_dim: int,
     scale: float,
     causal: bool,
+    nheads: int,
+    seq_stride: int,
 ) -> tuple[_Tensor, _Tensor, _Tensor]: ...

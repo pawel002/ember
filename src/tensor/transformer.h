@@ -64,21 +64,29 @@ void embedding_bwd(const float *dout, const int *idx, float *dweight, int n_idx,
 
 /* ---- fused ("flash") attention ----
  * out = softmax(scale * Q K^T) V, computed in tiles so the (seq x seq) score
- * matrix never reaches global memory. q/k/v/out are (batch, seq, head_dim)
- * row-major with batch = B*heads; `lse` is (batch, sq) and holds the per-row
- * log-sum-exp that backward needs to rebuild the softmax. `causal` masks key
- * j > query i. Backward also needs a (batch, sq) scratch buffer, `rowdot`,
- * for the rowsum(dO * O) term. See flash_gpu.cu.
+ * matrix never reaches global memory. q/k/v/out hold `batch` = B*heads
+ * independent (seq, head_dim) matrices; `nheads` and `sseq` (the stride between
+ * consecutive sequence positions) say how they are interleaved:
+ *     nheads = 1, sseq = head_dim      -> packed (batch, seq, head_dim)
+ *     nheads = H, sseq = H * head_dim  -> (B, seq, H, head_dim) read in place,
+ *                                         so no transpose-to-heads copy is
+ *                                         needed on either side of attention.
+ * `lse` is always packed (batch, sq) and holds the per-row log-sum-exp that
+ * backward needs to rebuild the softmax. `causal` masks key j > query i.
+ * Backward also needs a (batch, sq) scratch buffer, `rowdot`, for the
+ * rowsum(dO * O) term. See flash_gpu.cu.
  *
  * The CUDA kernels are specialized per head_dim; attention_supported() says
  * whether this head_dim has one (callers fall back to the composed
  * bmm + softmax + bmm path otherwise). The CPU backend supports every size. */
 int attention_supported(int dh);
 void attention_fwd(const float *q, const float *k, const float *v, float *out, float *lse,
-                   int batch, int sq, int sk, int dh, float scale, int causal);
+                   int batch, int sq, int sk, int dh, float scale, int causal, int nheads,
+                   int sseq);
 void attention_bwd(const float *dout, const float *q, const float *k, const float *v,
                    const float *out, const float *lse, float *rowdot, float *dq, float *dk,
-                   float *dv, int batch, int sq, int sk, int dh, float scale, int causal);
+                   float *dv, int batch, int sq, int sk, int dh, float scale, int causal,
+                   int nheads, int sseq);
 
 #ifdef __cplusplus
 }
