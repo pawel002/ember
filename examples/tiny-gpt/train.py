@@ -215,7 +215,13 @@ def main() -> int:
         f"{args.layers} layers, block {args.block_size}"
     )
 
-    opt = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    # foreach: one grouped kernel updates all ~100 parameters per step.
+    opt = optim.AdamW(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        foreach=True,
+    )
     crit = loss.CrossEntropyLoss()
 
     print(f"training for {args.steps} steps (batch {args.batch_size}) ...")

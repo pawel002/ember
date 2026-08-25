@@ -570,38 +570,100 @@ static PyObject *_sgd_step(PyObject *module, PyObject *args)
 
 /* Grouped Adam: one launch updates every parameter. Takes lists of the per-
  * parameter tensors and builds the device pointer arrays for the kernel. */
-static PyObject *_adam_step_group(PyObject *module, PyObject *args)
-{
-    PyObject *pl, *gl, *ml, *vl;
-    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2;
-    if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffff", &PyList_Type, &pl, &PyList_Type, &gl,
-                          &PyList_Type, &ml, &PyList_Type, &vl, &lr, &beta1, &mb1, &beta2, &mb2,
-                          &eps, &bc1, &bc2))
-        return NULL;
+/* ---- grouped (multi-tensor) optimizer steps ----
+ * One kernel updates every parameter, so a 100-parameter model costs one launch
+ * per step instead of 100. The kernel reads the per-parameter buffer pointers
+ * from device arrays, which have to be uploaded -- but parameters and their
+ * Adam state never move, and after warmup the caching allocator hands back the
+ * same gradient buffers every step, so the upload is done once and then skipped
+ * (a host-side memcmp) for the rest of training. That keeps the steady-state
+ * cost at a single launch with no host<->device traffic and no sync. */
+typedef struct {
+    int nparams;
+    float **hp, **hg, **hm, **hv;
+    int *hs;
+    float **dp, **dg, **dm, **dv;
+    int *ds;
+} _GroupCache;
 
-    int nparams = (int)PyList_Size(pl);
-    if (nparams == 0) Py_RETURN_NONE;
-    if ((int)PyList_Size(gl) != nparams || (int)PyList_Size(ml) != nparams ||
-        (int)PyList_Size(vl) != nparams) {
-        PyErr_SetString(PyExc_ValueError, "grouped optimizer: parameter list lengths differ");
-        return NULL;
+static _GroupCache g_group = {0};
+
+static void _group_free(_GroupCache *c)
+{
+    free(c->hp);
+    free(c->hg);
+    free(c->hm);
+    free(c->hv);
+    free(c->hs);
+    free_memory(c->dp);
+    free_memory(c->dg);
+    free_memory(c->dm);
+    free_memory(c->dv);
+    free_memory(c->ds);
+    memset(c, 0, sizeof(*c));
+}
+
+static int _group_alloc(_GroupCache *c, int nparams)
+{
+    size_t pb = (size_t)nparams * sizeof(float *);
+    size_t sb = (size_t)nparams * sizeof(int);
+    c->hp = (float **)malloc(pb);
+    c->hg = (float **)malloc(pb);
+    c->hm = (float **)malloc(pb);
+    c->hv = (float **)malloc(pb);
+    c->hs = (int *)malloc(sb);
+    c->dp = (float **)alloc_memory(pb);
+    c->dg = (float **)alloc_memory(pb);
+    c->dm = (float **)alloc_memory(pb);
+    c->dv = (float **)alloc_memory(pb);
+    c->ds = (int *)alloc_memory(sb);
+    if (!c->hp || !c->hg || !c->hm || !c->hv || !c->hs || !c->dp || !c->dg || !c->dm || !c->dv ||
+        !c->ds) {
+        _group_free(c);
+        return 0;
+    }
+    c->nparams = nparams;
+    /* Force the first upload: the freshly-malloc'd host mirrors are garbage, so
+     * seed them with a value no real buffer can have. */
+    for (int i = 0; i < nparams; i++) {
+        c->hp[i] = c->hg[i] = c->hm[i] = c->hv[i] = (float *)(intptr_t)-1;
+        c->hs[i] = -1;
+    }
+    return 1;
+}
+
+/* Refresh the device pointer/size arrays from `pl`/`gl`/`ml`/`vl`, uploading
+ * only the ones that actually changed. Returns 0 (with a Python error set) on
+ * failure; otherwise fills *max_size. */
+static int _group_sync(PyObject *pl, PyObject *gl, PyObject *ml, PyObject *vl, int nparams,
+                       int *max_size)
+{
+    if (g_group.nparams != nparams) {
+        _group_free(&g_group);
+        if (!_group_alloc(&g_group, nparams)) {
+            PyErr_NoMemory();
+            return 0;
+        }
     }
 
-    float **hp = (float **)malloc(nparams * sizeof(float *));
-    float **hg = (float **)malloc(nparams * sizeof(float *));
-    float **hm = (float **)malloc(nparams * sizeof(float *));
-    float **hv = (float **)malloc(nparams * sizeof(float *));
-    int *hs = (int *)malloc(nparams * sizeof(int));
+    size_t pb = (size_t)nparams * sizeof(float *);
+    size_t sb = (size_t)nparams * sizeof(int);
+    float **hp = (float **)malloc(pb);
+    float **hg = (float **)malloc(pb);
+    float **hm = (float **)malloc(pb);
+    float **hv = (float **)malloc(pb);
+    int *hs = (int *)malloc(sb);
     if (!hp || !hg || !hm || !hv || !hs) {
         free(hp);
         free(hg);
         free(hm);
         free(hv);
         free(hs);
-        return PyErr_NoMemory();
+        PyErr_NoMemory();
+        return 0;
     }
 
-    int max_size = 0;
+    int mx = 0;
     for (int i = 0; i < nparams; i++) {
         _Tensor *pp = (_Tensor *)PyList_GetItem(pl, i);
         _Tensor *gg = (_Tensor *)PyList_GetItem(gl, i);
@@ -612,38 +674,96 @@ static PyObject *_adam_step_group(PyObject *module, PyObject *args)
         hm[i] = (float *)mm->d_ptr;
         hv[i] = (float *)vv->d_ptr;
         hs[i] = pp->size;
-        if (pp->size > max_size) max_size = pp->size;
+        if (pp->size > mx) mx = pp->size;
+    }
+    *max_size = mx;
+
+    struct {
+        void *host;
+        void *cached;
+        void *dev;
+        size_t bytes;
+    } arrays[5] = {
+        {hp, g_group.hp, g_group.dp, pb}, {hg, g_group.hg, g_group.dg, pb},
+        {hm, g_group.hm, g_group.dm, pb}, {hv, g_group.hv, g_group.dv, pb},
+        {hs, g_group.hs, g_group.ds, sb},
+    };
+    for (int i = 0; i < 5; i++) {
+        if (memcmp(arrays[i].host, arrays[i].cached, arrays[i].bytes) == 0) continue;
+        /* copy_to_device runs on the default stream, so make sure nothing on
+         * the ember stream is still reading the old contents. Only happens on
+         * the first step (and after a reallocation). */
+        sync_device();
+        memcpy(arrays[i].cached, arrays[i].host, arrays[i].bytes);
+        copy_to_device(arrays[i].dev, arrays[i].host, arrays[i].bytes);
     }
 
-    size_t pbytes = (size_t)nparams * sizeof(float *);
-    float **dp = (float **)alloc_memory(pbytes);
-    float **dg = (float **)alloc_memory(pbytes);
-    float **dm = (float **)alloc_memory(pbytes);
-    float **dv = (float **)alloc_memory(pbytes);
-    int *ds = (int *)alloc_memory((size_t)nparams * sizeof(int));
-
-    copy_to_device(dp, hp, pbytes);
-    copy_to_device(dg, hg, pbytes);
-    copy_to_device(dm, hm, pbytes);
-    copy_to_device(dv, hv, pbytes);
-    copy_to_device(ds, hs, (size_t)nparams * sizeof(int));
-
-    adam_step_group(dp, dg, dm, dv, ds, nparams, max_size, lr, beta1, mb1, beta2, mb2, eps, bc1,
-                    bc2);
-    // Ensure the kernel has consumed the pointer arrays before they return to
-    // the allocator pool.
-    sync_device();
-
-    free_memory(dp);
-    free_memory(dg);
-    free_memory(dm);
-    free_memory(dv);
-    free_memory(ds);
     free(hp);
     free(hg);
     free(hm);
     free(hv);
     free(hs);
+    return 1;
+}
+
+static int _group_parse(PyObject *args, PyObject **pl, PyObject **gl, PyObject **ml, PyObject **vl,
+                        float *lr, float *beta1, float *mb1, float *beta2, float *mb2, float *eps,
+                        float *bc1, float *bc2, float *wd, int with_wd)
+{
+    if (with_wd) {
+        if (!PyArg_ParseTuple(args, "O!O!O!O!fffffffff", &PyList_Type, pl, &PyList_Type, gl,
+                              &PyList_Type, ml, &PyList_Type, vl, lr, beta1, mb1, beta2, mb2, eps,
+                              bc1, bc2, wd))
+            return 0;
+    } else if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffff", &PyList_Type, pl, &PyList_Type, gl,
+                                 &PyList_Type, ml, &PyList_Type, vl, lr, beta1, mb1, beta2, mb2,
+                                 eps, bc1, bc2)) {
+        return 0;
+    }
+
+    Py_ssize_t n = PyList_Size(*pl);
+    if (PyList_Size(*gl) != n || PyList_Size(*ml) != n || PyList_Size(*vl) != n) {
+        PyErr_SetString(PyExc_ValueError, "grouped optimizer: parameter list lengths differ");
+        return 0;
+    }
+    return 1;
+}
+
+static PyObject *_adam_step_group(PyObject *module, PyObject *args)
+{
+    PyObject *pl, *gl, *ml, *vl;
+    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, wd = 0.0f;
+    if (!_group_parse(args, &pl, &gl, &ml, &vl, &lr, &beta1, &mb1, &beta2, &mb2, &eps, &bc1, &bc2,
+                      &wd, 0))
+        return NULL;
+
+    int nparams = (int)PyList_Size(pl);
+    if (nparams == 0) Py_RETURN_NONE;
+
+    int max_size = 0;
+    if (!_group_sync(pl, gl, ml, vl, nparams, &max_size)) return NULL;
+
+    adam_step_group(g_group.dp, g_group.dg, g_group.dm, g_group.dv, g_group.ds, nparams, max_size,
+                    lr, beta1, mb1, beta2, mb2, eps, bc1, bc2);
+    Py_RETURN_NONE;
+}
+
+static PyObject *_adamw_step_group(PyObject *module, PyObject *args)
+{
+    PyObject *pl, *gl, *ml, *vl;
+    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, wd;
+    if (!_group_parse(args, &pl, &gl, &ml, &vl, &lr, &beta1, &mb1, &beta2, &mb2, &eps, &bc1, &bc2,
+                      &wd, 1))
+        return NULL;
+
+    int nparams = (int)PyList_Size(pl);
+    if (nparams == 0) Py_RETURN_NONE;
+
+    int max_size = 0;
+    if (!_group_sync(pl, gl, ml, vl, nparams, &max_size)) return NULL;
+
+    adamw_step_group(g_group.dp, g_group.dg, g_group.dm, g_group.dv, g_group.ds, nparams, max_size,
+                     lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, wd);
     Py_RETURN_NONE;
 }
 
@@ -782,6 +902,7 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_adamw_step),
     OP_METHOD(_sgd_step),
     OP_METHOD(_adam_step_group),
+    OP_METHOD(_adamw_step_group),
     OP_METHOD(_adam_bias_update),
     OP_METHOD(_adam_step_dev),
     OP_METHOD(_adamw_step_dev),

@@ -201,6 +201,17 @@ void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *
     }
 }
 
+void adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
+                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
+                      float eps, float bc1, float bc2, float weight_decay)
+{
+    (void)max_size;
+    for (int pi = 0; pi < nparams; pi++) {
+        adamw_step(ps[pi], gs[pi], ms[pi], vs[pi], sizes[pi], lr, beta1, mb1, beta2, mb2, eps, bc1,
+                   bc2, weight_decay);
+    }
+}
+
 void adam_bias_update(float *t, float *bc, float beta1, float beta2)
 {
     float tt = t[0] + 1.0f;

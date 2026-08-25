@@ -209,6 +209,22 @@ def _adam_step_group(
     bc2: float,
 ) -> None: ...
 
+def _adamw_step_group(
+    params: list[_Tensor],
+    grads: list[_Tensor],
+    means: list[_Tensor],
+    variances: list[_Tensor],
+    lr: float,
+    beta1: float,
+    mb1: float,
+    beta2: float,
+    mb2: float,
+    eps: float,
+    bc1: float,
+    bc2: float,
+    weight_decay: float,
+) -> None: ...
+
 # capturable Adam/AdamW: device-side step counter (t) and bias corrections (bc)
 def _adam_bias_update(t: _Tensor, bc: _Tensor, beta1: float, beta2: float) -> None: ...
 def _adam_step_dev(

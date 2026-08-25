@@ -66,6 +66,9 @@ void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, floa
 void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
                      float eps, float bc1, float bc2);
+void adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
+                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
+                      float eps, float bc1, float bc2, float weight_decay);
 
 #ifdef __cplusplus
 }

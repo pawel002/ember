@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import ember.optim as optim
 from ember import Tensor
@@ -46,3 +47,72 @@ class TestAdamW:
 
         # p -= lr*wd*p (the Adam term is ~0 because the gradient is 0)
         assert np.all(t_param.to_np() < 2.0)
+
+
+class TestAdamWForeach:
+    """``foreach=True`` updates every parameter in one grouped kernel launch; it
+    must reproduce the per-parameter path exactly, including across the
+    re-upload that happens when the parameter set changes."""
+
+    SHAPES = [(65, 256), (256,), (256, 1024), (1024,), (7,), (1,)]
+
+    def _run(self, foreach, shapes, steps):
+        rng = np.random.default_rng(0)
+        params = [
+            Tensor.from_np(rng.standard_normal(s).astype(np.float32)) for s in shapes
+        ]
+        opt = optim.AdamW(params, lr=1e-3, weight_decay=0.1, foreach=foreach)
+        for grads in steps:
+            opt.apply([Tensor.from_np(g) for g in grads])
+        return [p.to_np() for p in params]
+
+    def _grad_steps(self, shapes, n):
+        rng = np.random.default_rng(1)
+        return [
+            [rng.standard_normal(s).astype(np.float32) for s in shapes]
+            for _ in range(n)
+        ]
+
+    def test_matches_per_parameter_path(self):
+        steps = self._grad_steps(self.SHAPES, 5)
+        for a, b in zip(
+            self._run(False, self.SHAPES, steps),
+            self._run(True, self.SHAPES, steps),
+            strict=True,
+        ):
+            np.testing.assert_array_equal(a, b)
+
+    @pytest.mark.parametrize("shapes", [[(4,)], [(3, 5), (7,)], [(1,)] * 20])
+    def test_various_parameter_counts(self, shapes):
+        steps = self._grad_steps(shapes, 3)
+        for a, b in zip(
+            self._run(False, shapes, steps), self._run(True, shapes, steps), strict=True
+        ):
+            np.testing.assert_array_equal(a, b)
+
+    def test_two_optimizers_interleaved(self):
+        """The grouped path caches its device pointer arrays; two optimizers
+        alternating must each still see their own parameters."""
+        rng = np.random.default_rng(2)
+        a = [Tensor.from_np(rng.standard_normal((4,)).astype(np.float32))]
+        b = [Tensor.from_np(rng.standard_normal((9,)).astype(np.float32))]
+        a_ref = [Tensor.from_np(a[0].to_np())]
+        b_ref = [Tensor.from_np(b[0].to_np())]
+        oa = optim.AdamW(a, lr=1e-2, foreach=True)
+        ob = optim.AdamW(b, lr=1e-2, foreach=True)
+        oa_ref = optim.AdamW(a_ref, lr=1e-2)
+        ob_ref = optim.AdamW(b_ref, lr=1e-2)
+        for _ in range(4):
+            ga = rng.standard_normal((4,)).astype(np.float32)
+            gb = rng.standard_normal((9,)).astype(np.float32)
+            oa.apply([Tensor.from_np(ga)])
+            ob.apply([Tensor.from_np(gb)])
+            oa_ref.apply([Tensor.from_np(ga)])
+            ob_ref.apply([Tensor.from_np(gb)])
+        np.testing.assert_array_equal(a[0].to_np(), a_ref[0].to_np())
+        np.testing.assert_array_equal(b[0].to_np(), b_ref[0].to_np())
+
+    def test_capturable_wins_over_foreach(self):
+        p = [Tensor.from_np(np.ones((2,), dtype=np.float32))]
+        opt = optim.AdamW(p, capturable=True, foreach=True)
+        assert not opt.foreach
