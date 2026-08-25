@@ -141,11 +141,12 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
     }
 }
 
-void gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+void gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
     const float a = 0.8f;
     for (int i = 0; i < n; i++) {
-        out[i] = grad[i] * ((1.0f + tanhf(a * x[i])) * (0.5f + a * (x[i] - y[i])));
+        float t = tanhf(a * x[i]);
+        out[i] = grad[i] * 0.5f * (1.0f + t) * (1.0f + a * x[i] * (1.0f - t));
     }
 }
 

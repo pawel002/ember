@@ -53,9 +53,14 @@ class TestActivations:
         dx_t = layer.backward(grad_t)
         dx_np_expected = ref_backward(x_np, y_np_expected, grad_np)
 
+        # atol as well as rtol: the references are algebraically-equal but
+        # differently-ordered float32 expressions, so elements that land near
+        # zero (GELU's derivative crosses zero) differ in the last ulp or two
+        # and have no meaningful relative accuracy.
         np.testing.assert_allclose(
             dx_t.to_np(),
             dx_np_expected,
             rtol=1e-4,
+            atol=1e-6,
             err_msg=f"{name} Backward mismatch at shape {shape}",
         )

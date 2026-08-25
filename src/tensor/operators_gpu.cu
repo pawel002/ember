@@ -393,17 +393,23 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
     CUDA_POST_LAUNCH();
 }
 
-__global__ void k_gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+// y = 0.5*x*(1+t) with t = tanh(0.8x), so substituting it into
+//     dy/dx = (1+t) * (0.5 + 0.8*(x - y))
+// gives 0.5*(1+t)*(1 + 0.8*x*(1-t)) -- same value, but y no longer has to be
+// read back from memory (this kernel is purely bandwidth-bound).
+__global__ void k_gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
     const float a = 0.8f;
-    out[i] = grad[i] * ((1.0f + tanhf(a * x[i])) * (0.5f + a * (x[i] - y[i])));
+    float xi = x[i];
+    float t = tanhf(a * xi);
+    out[i] = grad[i] * 0.5f * (1.0f + t) * (1.0f + a * xi * (1.0f - t));
 }
 
-void gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n)
+void gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
-    k_gelu_bwd<<<grid(n), BLOCK_SIZE, 0, ember_stream()>>>(grad, x, y, out, n);
+    k_gelu_bwd<<<grid(n), BLOCK_SIZE, 0, ember_stream()>>>(grad, x, out, n);
     CUDA_POST_LAUNCH();
 }
 

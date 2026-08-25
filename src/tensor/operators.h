@@ -32,9 +32,12 @@ int sum_axis_product(const int *shape, int start, int end);
 void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim);
 void max_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim);
 
-/* GELU backward needs (grad, x, y); the other activation backprops are binary
- * ops generated from operators.def (relu_bwd/sigmoid_bwd/tanh_bwd). */
-void gelu_bwd(const float *grad, const float *x, const float *y, float *out, int n);
+/* GELU backward is hand-written because it needs the pre-activation x (the
+ * other activation backprops are binary ops over (grad, y) generated from
+ * operators.def: relu_bwd/sigmoid_bwd/tanh_bwd). It reads only grad and x --
+ * y is recovered from tanh(0.8x), which the derivative needs anyway, so the
+ * kernel moves 3 arrays instead of 4. */
+void gelu_bwd(const float *grad, const float *x, float *out, int n);
 
 /* Fused, in-place optimizer steps (one kernel launch per parameter). The bias
  * corrections (bc1 = 1/(1-beta1^t), bc2 = 1/(1-beta2^t)) are precomputed on the

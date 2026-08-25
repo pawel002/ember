@@ -517,14 +517,13 @@ static PyObject *_max_axis(PyObject *module, PyObject *args)
  * ops generated from operators.def. */
 static PyObject *_gelu_bwd(PyObject *module, PyObject *args)
 {
-    _Tensor *grad, *x, *y;
-    if (!PyArg_ParseTuple(args, "O!O!O!", &_TensorType, &grad, &_TensorType, &x, &_TensorType, &y))
-        return NULL;
+    _Tensor *grad, *x;
+    if (!PyArg_ParseTuple(args, "O!O!", &_TensorType, &grad, &_TensorType, &x)) return NULL;
 
     _Tensor *result = alloc_result(grad->size);
     if (!result) return NULL;
 
-    gelu_bwd(grad->d_ptr, x->d_ptr, y->d_ptr, result->d_ptr, grad->size);
+    gelu_bwd(grad->d_ptr, x->d_ptr, result->d_ptr, grad->size);
     return (PyObject *)result;
 }
 
