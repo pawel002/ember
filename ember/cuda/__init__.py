@@ -23,10 +23,29 @@ from ember._core import (
     _begin_capture,
     _empty_cache,
     _end_capture,
+    _get_matmul_tf32,
     _graph_destroy,
     _graph_launch,
+    _set_matmul_tf32,
     _sync,
 )
+
+
+def set_matmul_tf32(enabled: bool) -> None:
+    """Run cuBLAS GEMMs on the TF32 tensor cores instead of the fp32 pipeline.
+
+    TF32 rounds the *inputs* of every matmul to a 10-bit mantissa and
+    accumulates in fp32, for roughly 3x the GEMM throughput on Ampere and
+    later. That is the standard trade for neural-network training (the same
+    knob as ``torch.backends.cuda.matmul.allow_tf32``) but it is a real
+    precision change, so it is off by default.
+    """
+    _set_matmul_tf32(bool(enabled))
+
+
+def get_matmul_tf32() -> bool:
+    """Whether TF32 matmuls are enabled (see :func:`set_matmul_tf32`)."""
+    return _get_matmul_tf32()
 
 
 def sync() -> None:
@@ -70,4 +89,11 @@ def capture(step: Callable[[], object], warmup: int = 3) -> Graph:
     return Graph(_end_capture())
 
 
-__all__ = ["capture", "Graph", "sync", "empty_cache"]
+__all__ = [
+    "capture",
+    "Graph",
+    "sync",
+    "empty_cache",
+    "set_matmul_tf32",
+    "get_matmul_tf32",
+]

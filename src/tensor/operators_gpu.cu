@@ -177,7 +177,7 @@ void matmul(const float *a, const float *b, float *out, int n, int m, int k)
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
-    CUBLAS_ERR_CHK(cublasSetStream(cublas_handle(), ember_stream()));
+    ember_cublas_prepare(cublas_handle());
     CUBLAS_ERR_CHK(cublasSgemm(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, b, m, a,
                                k, &beta, out, m));
 }
@@ -189,7 +189,7 @@ void matmul_batched(const float *a, const float *b, float *out, int batch, int n
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
-    CUBLAS_ERR_CHK(cublasSetStream(cublas_handle(), ember_stream()));
+    ember_cublas_prepare(cublas_handle());
     CUBLAS_ERR_CHK(cublasSgemmStridedBatched(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
                                              &alpha, b, m, (long long)k * m, a, k, (long long)n * k,
                                              &beta, out, m, (long long)n * m, batch));

@@ -701,6 +701,19 @@ static PyObject *_empty_cache(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *_set_matmul_tf32(PyObject *module, PyObject *args)
+{
+    int enabled;
+    if (!PyArg_ParseTuple(args, "p", &enabled)) return NULL;
+    set_matmul_tf32(enabled);
+    Py_RETURN_NONE;
+}
+
+static PyObject *_get_matmul_tf32(PyObject *module, PyObject *args)
+{
+    return PyBool_FromLong(get_matmul_tf32());
+}
+
 static PyObject *_begin_capture(PyObject *module, PyObject *args)
 {
     begin_capture();
@@ -780,6 +793,10 @@ static PyMethodDef module_methods[] = {
     // device / CUDA-graph control
     {"_sync", (PyCFunction)_sync, METH_VARARGS, "Synchronize the device"},
     {"_empty_cache", (PyCFunction)_empty_cache, METH_VARARGS, "Release the cached device pool"},
+    {"_set_matmul_tf32", (PyCFunction)_set_matmul_tf32, METH_VARARGS,
+     "Enable/disable TF32 tensor cores for cuBLAS GEMMs"},
+    {"_get_matmul_tf32", (PyCFunction)_get_matmul_tf32, METH_VARARGS,
+     "Whether TF32 matmuls are enabled"},
     {"_begin_capture", (PyCFunction)_begin_capture, METH_VARARGS, "Begin CUDA-graph capture"},
     {"_end_capture", (PyCFunction)_end_capture, METH_VARARGS, "End capture; return graph handle"},
     {"_graph_launch", (PyCFunction)_graph_launch, METH_VARARGS, "Replay a captured graph"},

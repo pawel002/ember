@@ -305,7 +305,7 @@ extern "C" void bmm(const float *a, const float *b, float *out, int batch, int n
     int ldb = transB ? k : m;
     float beta = 0.0f;
 
-    CUBLAS_ERR_CHK(cublasSetStream(tf_cublas(), ember_stream()));
+    ember_cublas_prepare(tf_cublas());
     CUBLAS_ERR_CHK(cublasSgemmStridedBatched(tf_cublas(), opB, opA, m, n, k, &alpha, b, ldb,
                                              (long long)k * m, a, lda, (long long)n * k, &beta, out,
                                              m, (long long)n * m, batch));
