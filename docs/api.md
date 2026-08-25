@@ -243,10 +243,9 @@ Gaussian Error Linear Unit (using `tanh` approximation).
 ### Transformer layers
 
 Building blocks for attention models. Each is backed by fused CUDA kernels
-(LayerNorm, softmax and the causal mask are single kernels; the attention
-matmuls use a batched cuBLAS GEMM with the `1/sqrt(head_dim)` scale folded in).
-They share the `Layer` interface, so they compose with `Sequential`, the
-optimizers and the losses like any other layer.
+(LayerNorm is a single kernel; attention is a fused flash-attention kernel that
+never materializes the score matrix). They share the `Layer` interface, so they
+compose with `Sequential`, the optimizers and the losses like any other layer.
 
 #### `ember.nn.LayerNorm(dim, eps=1e-5)`
 Layer normalization over the last dimension, with learned scale/shift:
@@ -264,6 +263,13 @@ Multi-head self-attention on `(batch, seq, embed_dim)` inputs:
 $\mathrm{softmax}(QK^\top / \sqrt{d_h})V$ per head. With `causal=True` each query
 attends only to keys at or before its position (decoder / GPT-style masking).
 The four projections are `Linear` layers; `parameters()` aggregates all of them.
+
+The attention itself runs as a single fused ("flash") kernel when the backend
+has one for this `head_dim` (16, 32, 64 or 128 -- check the `fused` attribute):
+scores are tiled through shared memory and never written to global memory, and
+backward recomputes them from the saved log-sum-exp. Other head dimensions fall
+back automatically to the composed batched-GEMM + fused-softmax path, which
+materializes the `(seq, seq)` score matrix. Both paths compute the same thing.
 
 #### `ember.nn.FeedForward(dim, hidden=None, activation="gelu")`
 Position-wise MLP: `Linear(dim, hidden) -> activation -> Linear(hidden, dim)`.
@@ -304,7 +310,7 @@ optimizers implement `ember.optim.base.Optimizer`:
 Stochastic gradient descent with optional (Polyak) momentum: `v = momentum*v + g`,
 then `p -= lr*v`. With `momentum=0` this is plain gradient descent.
 
-#### `ember.optim.Adam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-8)`
+#### `ember.optim.Adam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, capturable=False, foreach=False)`
 Adam optimizer.
 
 - **Arguments:**
@@ -312,10 +318,15 @@ Adam optimizer.
   - `lr` (float): Learning rate.
   - `betas` (tuple[float, float]): Coefficients for the running averages of the gradient and its square.
   - `eps` (float): Term added to the denominator for numerical stability.
+  - `capturable` (bool): Keep the step counter and bias corrections on-device so
+    the update stays exact under CUDA-graph capture.
+  - `foreach` (bool): Update every parameter in one grouped kernel launch
+    instead of one launch per parameter. Ignored when `capturable=True`.
 
-#### `ember.optim.AdamW(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)`
+#### `ember.optim.AdamW(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01, capturable=False, foreach=False)`
 Adam with decoupled weight decay (`p *= 1 - lr*weight_decay` applied directly to
-the parameters rather than folded into the gradient).
+the parameters rather than folded into the gradient). Takes the same
+`capturable` / `foreach` options as `Adam`.
 
 ```python
 import ember.optim as optim
@@ -348,3 +359,27 @@ criterion = loss.CrossEntropyLoss()
 value = criterion(logits, one_hot_targets)  # scalar float
 grad = criterion.backward()                 # Tensor, dL/dlogits
 ```
+
+---
+
+## Device control (`ember.cuda`)
+
+#### `ember.cuda.sync()`
+Block until all queued GPU work has finished.
+
+#### `ember.cuda.empty_cache()`
+Release ember's cached device-memory pool back to the driver.
+
+#### `ember.cuda.set_matmul_tf32(enabled)` / `ember.cuda.get_matmul_tf32()`
+Run cuBLAS GEMMs on the TF32 tensor cores instead of the fp32 pipeline —
+roughly 3x the GEMM throughput on Ampere and later, at a 10-bit input mantissa
+with fp32 accumulation. The same trade as PyTorch's
+`torch.backends.cuda.matmul.allow_tf32`, and **off by default** for the same
+reason: it is a real precision change.
+
+#### `ember.cuda.capture(step, warmup=3)`
+Record a fixed-shape training step into a replayable `Graph`. See
+[Performance](performance.md) for the requirements.
+
+On the CPU backend these are no-ops (`set_matmul_tf32` stores the flag but
+nothing reads it).
