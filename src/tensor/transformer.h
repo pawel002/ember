@@ -62,6 +62,24 @@ void embedding_fwd(const float *weight, const int *idx, float *out, int n_idx, i
 void embedding_bwd(const float *dout, const int *idx, float *dweight, int n_idx, int dim,
                    int vocab);
 
+/* ---- fused ("flash") attention ----
+ * out = softmax(scale * Q K^T) V, computed in tiles so the (seq x seq) score
+ * matrix never reaches global memory. q/k/v/out are (batch, seq, head_dim)
+ * row-major with batch = B*heads; `lse` is (batch, sq) and holds the per-row
+ * log-sum-exp that backward needs to rebuild the softmax. `causal` masks key
+ * j > query i. Backward also needs a (batch, sq) scratch buffer, `rowdot`,
+ * for the rowsum(dO * O) term. See flash_gpu.cu.
+ *
+ * The CUDA kernels are specialized per head_dim; attention_supported() says
+ * whether this head_dim has one (callers fall back to the composed
+ * bmm + softmax + bmm path otherwise). The CPU backend supports every size. */
+int attention_supported(int dh);
+void attention_fwd(const float *q, const float *k, const float *v, float *out, float *lse,
+                   int batch, int sq, int sk, int dh, float scale, int causal);
+void attention_bwd(const float *dout, const float *q, const float *k, const float *v,
+                   const float *out, const float *lse, float *rowdot, float *dq, float *dk,
+                   float *dv, int batch, int sq, int sk, int dh, float scale, int causal);
+
 #ifdef __cplusplus
 }
 #endif

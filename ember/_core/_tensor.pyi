@@ -264,3 +264,31 @@ def _begin_capture() -> None: ...
 def _end_capture() -> int: ...
 def _graph_launch(handle: int) -> None: ...
 def _graph_destroy(handle: int) -> None: ...
+
+# fused ("flash") attention: q/k/v/out are (batch, seq, head_dim) row-major
+def _attention_supported(head_dim: int) -> bool: ...
+def _attention_fwd(
+    q: _Tensor,
+    k: _Tensor,
+    v: _Tensor,
+    batch: int,
+    sq: int,
+    sk: int,
+    head_dim: int,
+    scale: float,
+    causal: bool,
+) -> tuple[_Tensor, _Tensor]: ...
+def _attention_bwd(
+    dout: _Tensor,
+    q: _Tensor,
+    k: _Tensor,
+    v: _Tensor,
+    out: _Tensor,
+    lse: _Tensor,
+    batch: int,
+    sq: int,
+    sk: int,
+    head_dim: int,
+    scale: float,
+    causal: bool,
+) -> tuple[_Tensor, _Tensor, _Tensor]: ...
