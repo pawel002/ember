@@ -18,6 +18,15 @@ from ember._core import _attention_bwd, _attention_fwd, _attention_supported
 SUPPORTED_HEAD_DIMS = [16, 32, 64, 128]
 
 
+def _cuda_backend() -> bool:
+    # Same probe as tests/tensor/test_cuda_graph.py: on the CPU backend capture
+    # is a no-op and hands back a null (0) graph handle.
+    return em.cuda.capture(lambda: None)._handle != 0
+
+
+CUDA_BACKEND = _cuda_backend()
+
+
 def _ref(q, k, v, dout, scale, causal):
     """Reference attention forward + backward in float64."""
     q, k, v, dout = (a.astype(np.float64) for a in (q, k, v, dout))
@@ -79,9 +88,15 @@ class TestFlashAttention:
     def test_supported(self, head_dim):
         assert _attention_supported(head_dim)
 
+    @pytest.mark.skipif(
+        not CUDA_BACKEND, reason="CPU backend is not specialized per head_dim"
+    )
     @pytest.mark.parametrize("head_dim", [1, 4, 8, 48, 96])
-    def test_unsupported_head_dims(self, head_dim):
-        # Not an error: the layer falls back to the composed path for these.
+    def test_cuda_specializes_only_known_head_dims(self, head_dim):
+        # The CUDA kernels are templated on head_dim, so anything outside the
+        # instantiated set must report unsupported and send the layer down the
+        # composed path. (The CPU reference is size-agnostic and supports
+        # everything, hence the skip.)
         assert not _attention_supported(head_dim)
 
     @pytest.mark.parametrize("head_dim", SUPPORTED_HEAD_DIMS)
@@ -212,8 +227,20 @@ class TestFusedVsComposedLayer:
         for a, b in zip(gr_f, gr_c, strict=True):
             np.testing.assert_allclose(a, b, rtol=2e-4, atol=1e-4)
 
-    def test_small_head_dim_uses_fallback(self):
+    def test_head_dim_without_a_kernel_still_runs(self):
+        """Dispatch must follow the capability query on either backend, and the
+        chosen path must run end to end. (The composed path's numerics are
+        covered by tests/nn/test_attention.py.)"""
+        rng = np.random.default_rng(0)
         mha = nn.MultiHeadAttention(8, 2)  # head_dim 4
-        assert not mha.fused
-        x = Tensor.from_np(np.zeros((1, 4, 8), dtype=np.float32))
-        assert mha.forward(x, training=True).shape == (1, 4, 8)
+        assert mha.fused == _attention_supported(4)
+
+        x = rng.standard_normal((2, 5, 8)).astype(np.float32)
+        g = rng.standard_normal((2, 5, 8)).astype(np.float32)
+        y = mha.forward(Tensor.from_np(x), training=True)
+        dx = mha.backward(Tensor.from_np(g))
+
+        assert y.shape == (2, 5, 8)
+        assert dx.shape == (2, 5, 8)
+        assert np.isfinite(y.to_np()).all()
+        assert np.isfinite(dx.to_np()).all()

@@ -103,7 +103,12 @@ class TestSumAxisReduction:
         a = rng.standard_normal(shape).astype(np.float32)
         got = em.sum(Tensor.from_np(a), axis=axis).to_np()
         want = a.astype(np.float64).sum(axis)
-        np.testing.assert_allclose(got, want, rtol=1e-4, atol=1e-4)
+        # Tolerance has to grow with the number of terms: the CPU backend
+        # accumulates one float32 running total per output, which drifts ~n*eps,
+        # while the CUDA path reduces in strips and stays far tighter. Pinning
+        # this to a fixed rtol would encode one backend's summation order.
+        tol = 1e-5 + 1e-7 * shape[axis]
+        np.testing.assert_allclose(got, want, rtol=tol, atol=tol)
 
     def test_repeated_calls_do_not_accumulate(self):
         # The split path writes partials into a pooled scratch buffer; a stale
