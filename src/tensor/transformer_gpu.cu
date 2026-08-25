@@ -306,6 +306,13 @@ extern "C" void bmm(const float *a, const float *b, float *out, int batch, int n
     float beta = 0.0f;
 
     ember_cublas_prepare(tf_cublas());
+    if (batch == 1) {
+        // Plain GEMM: the strided-batched entry point has extra setup cost and
+        // this is the hot path for Linear.backward (two OP_T products each).
+        CUBLAS_ERR_CHK(
+            cublasSgemm(tf_cublas(), opB, opA, m, n, k, &alpha, b, ldb, a, lda, &beta, out, m));
+        return;
+    }
     CUBLAS_ERR_CHK(cublasSgemmStridedBatched(tf_cublas(), opB, opA, m, n, k, &alpha, b, ldb,
                                              (long long)k * m, a, lda, (long long)n * k, &beta, out,
                                              m, (long long)n * m, batch));

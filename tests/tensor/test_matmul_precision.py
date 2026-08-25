@@ -1,4 +1,4 @@
-"""Tests for the TF32 matmul toggle.
+"""Tests for the TF32 matmul toggle and the transposed-operand GEMM path.
 
 ``ember.cuda.set_matmul_tf32`` swaps every cuBLAS GEMM onto the tensor cores,
 which rounds the inputs to a 10-bit mantissa. It has to stay a real toggle (the
@@ -10,6 +10,7 @@ import pytest
 
 import ember as em
 from ember import Tensor
+from ember.nn._functional import mm
 
 
 @pytest.fixture(autouse=True)
@@ -40,3 +41,38 @@ class TestMatmulPrecision:
         # TF32 keeps 10 mantissa bits on the inputs; fp32 keeps 24.
         rtol = 3e-3 if tf32 else 1e-5
         np.testing.assert_allclose(got, want, rtol=rtol, atol=rtol)
+
+
+class TestTransposedGemm:
+    """``mm`` passes transposes as cuBLAS OP_T flags rather than materializing a
+    transposed copy -- Linear.backward's two gradient products."""
+
+    @pytest.mark.parametrize(
+        "n, m, k", [(64, 32, 128), (1, 8, 16), (16, 1, 32), (5, 7, 3)]
+    )
+    @pytest.mark.parametrize("trans_a, trans_b", [(0, 0), (1, 0), (0, 1), (1, 1)])
+    def test_against_numpy(self, n, m, k, trans_a, trans_b):
+        rng = np.random.default_rng(0)
+        a = rng.standard_normal((k, n) if trans_a else (n, k)).astype(np.float32)
+        b = rng.standard_normal((m, k) if trans_b else (k, m)).astype(np.float32)
+        got = mm(
+            Tensor.from_np(a),
+            Tensor.from_np(b),
+            n,
+            m,
+            k,
+            trans_a=bool(trans_a),
+            trans_b=bool(trans_b),
+        )
+        want = (a.T if trans_a else a).astype(np.float64) @ (
+            b.T if trans_b else b
+        ).astype(np.float64)
+        assert got.shape == (n, m)
+        np.testing.assert_allclose(got.to_np(), want, rtol=1e-4, atol=1e-5)
+
+    def test_alpha_scales(self):
+        rng = np.random.default_rng(0)
+        a = rng.standard_normal((8, 4)).astype(np.float32)
+        b = rng.standard_normal((4, 6)).astype(np.float32)
+        got = mm(Tensor.from_np(a), Tensor.from_np(b), 8, 6, 4, alpha=2.5)
+        np.testing.assert_allclose(got.to_np(), 2.5 * (a @ b), rtol=1e-5, atol=1e-6)
