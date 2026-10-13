@@ -112,7 +112,7 @@ class TestAdamWForeach:
         np.testing.assert_array_equal(a[0].to_np(), a_ref[0].to_np())
         np.testing.assert_array_equal(b[0].to_np(), b_ref[0].to_np())
 
-    def test_capturable_wins_over_foreach(self):
+    def test_capturable_and_foreach_are_exclusive(self):
         p = [Tensor.from_np(np.ones((2,), dtype=np.float32))]
-        opt = optim.AdamW(p, capturable=True, foreach=True)
-        assert not opt.foreach
+        with pytest.raises(ValueError, match="capturable"):
+            optim.AdamW(p, capturable=True, foreach=True)

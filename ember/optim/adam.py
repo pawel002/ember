@@ -22,8 +22,12 @@ class Adam(Optimizer):
 
     With ``foreach=True`` all parameters are updated in a single grouped kernel
     launch instead of one launch per parameter -- a win for models with many
-    parameters. (Mutually exclusive with ``capturable``.)
+    parameters. ``capturable`` and ``foreach`` are mutually exclusive.
     """
+
+    # AdamW's decoupled weight decay; plain Adam runs the same kernels with 0,
+    # which leaves the update bit-identical to one without decay.
+    weight_decay: float = 0.0
 
     def __init__(
         self,
@@ -34,13 +38,16 @@ class Adam(Optimizer):
         capturable: bool = False,
         foreach: bool = False,
     ):
+        if capturable and foreach:
+            raise ValueError("capturable and foreach cannot be combined")
+
         self.parameters = parameters
         self.lr = lr
         self.beta1, self.beta2 = betas
         self.eps = eps
         self.t = 0
         self.capturable = capturable
-        self.foreach = foreach and not capturable
+        self.foreach = foreach
 
         self.means = [em.random.zeros(p.shape) for p in self.parameters]
         self.variances = [em.random.zeros(p.shape) for p in self.parameters]
@@ -69,55 +76,32 @@ class Adam(Optimizer):
             # the bias corrections are recomputed from _t at the next step
             self._t.copy_from_numpy(np.array([self.t], dtype=np.float32))
 
-    def apply(self, gradients: list[Tensor]):
-        if len(gradients) != len(self.parameters):
-            raise ValueError(
-                f"Optimizer expected {len(self.parameters)} gradients, "
-                f"but got {len(gradients)}"
-            )
-
-        mb1 = 1 - self.beta1
-        mb2 = 1 - self.beta2
-
-        if self.foreach:
-            self.t += 1
-            bc1 = 1.0 / (1 - self.beta1**self.t)
-            bc2 = 1.0 / (1 - self.beta2**self.t)
-            _adam_step_group(
-                self._p_cores,
-                [g._core for g in gradients],
-                self._m_cores,
-                self._v_cores,
-                self.lr,
-                self.beta1,
-                mb1,
-                self.beta2,
-                mb2,
-                self.eps,
-                bc1,
-                bc2,
-            )
-            return
+    def apply(self, gradients: list[Tensor | None]) -> None:
+        grads = self._check_gradients(gradients)
+        hyper = (
+            self.lr,
+            self.beta1,
+            1 - self.beta1,
+            self.beta2,
+            1 - self.beta2,
+            self.eps,
+        )
 
         if self.capturable:
             # Advance t and recompute bias corrections on-device (once per step),
             # then a fused in-place update per parameter reading them.
             _adam_bias_update(self._t._core, self._bc._core, self.beta1, self.beta2)
             for p, m, v, g in zip(
-                self.parameters, self.means, self.variances, gradients, strict=True
+                self.parameters, self.means, self.variances, grads, strict=True
             ):
                 _adam_step_dev(
                     p._core,
                     g._core,
                     m._core,
                     v._core,
-                    self.lr,
-                    self.beta1,
-                    mb1,
-                    self.beta2,
-                    mb2,
-                    self.eps,
+                    *hyper,
                     self._bc._core,
+                    self.weight_decay,
                 )
             return
 
@@ -125,21 +109,30 @@ class Adam(Optimizer):
         bc1 = 1.0 / (1 - self.beta1**self.t)
         bc2 = 1.0 / (1 - self.beta2**self.t)
 
+        if self.foreach:
+            _adam_step_group(
+                self._p_cores,
+                [g._core for g in grads],
+                self._m_cores,
+                self._v_cores,
+                *hyper,
+                bc1,
+                bc2,
+                self.weight_decay,
+            )
+            return
+
         # One fused, in-place kernel launch per parameter (replaces ~10 ops).
         for p, m, v, g in zip(
-            self.parameters, self.means, self.variances, gradients, strict=True
+            self.parameters, self.means, self.variances, grads, strict=True
         ):
             _adam_step(
                 p._core,
                 g._core,
                 m._core,
                 v._core,
-                self.lr,
-                self.beta1,
-                mb1,
-                self.beta2,
-                mb2,
-                self.eps,
+                *hyper,
                 bc1,
                 bc2,
+                self.weight_decay,
             )

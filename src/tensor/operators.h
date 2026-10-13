@@ -38,36 +38,34 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
  * kernel moves 3 arrays instead of 4. */
 void gelu_bwd(const float *grad, const float *x, float *out, int n);
 
-/* Fused, in-place optimizer steps (one kernel launch per parameter). The bias
- * corrections (bc1 = 1/(1-beta1^t), bc2 = 1/(1-beta2^t)) are precomputed on the
- * host so the kernel needs no per-step scalar powers. */
+/* Fused, in-place optimizer steps (one kernel launch per parameter).
+ *
+ * Adam and AdamW share one update: weight_decay is AdamW's decoupled decay
+ * (p *= 1 - lr * weight_decay), and plain Adam passes 0, which makes the decay
+ * factor exactly 1 and the result bit-identical to the undecayed update.
+ * mb1/mb2 are 1-beta1/1-beta2; the bias corrections bc1 = 1/(1-beta1^t) and
+ * bc2 = 1/(1-beta2^t) are precomputed on the host so the kernel needs no
+ * per-step scalar powers. */
 void adam_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-               float mb1, float beta2, float mb2, float eps, float bc1, float bc2);
-void adamw_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
-                float weight_decay);
+               float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
+               float weight_decay);
 void sgd_step(float *p, const float *g, float *v, int size, float lr, float momentum);
 
-/* Capturable Adam/AdamW: the step counter lives on-device (t, a length-1
- * buffer) and the bias corrections (bc, length-2: [bc1, bc2]) are computed
- * on-device, so a captured graph advances t on every replay and stays exact.
- * Call adam_bias_update once per step, then *_step_dev per parameter. */
+/* Capturable Adam: the step counter lives on-device (t, a length-1 buffer) and
+ * the bias corrections (bc, length-2: [bc1, bc2]) are computed on-device, so a
+ * captured graph advances t on every replay and stays exact. Call
+ * adam_bias_update once per step, then adam_step_dev per parameter. */
 void adam_bias_update(float *t, float *bc, float beta1, float beta2);
 void adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                   float mb1, float beta2, float mb2, float eps, const float *bc);
-void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                    float mb1, float beta2, float mb2, float eps, const float *bc,
-                    float weight_decay);
+                   float mb1, float beta2, float mb2, float eps, const float *bc,
+                   float weight_decay);
 
 /* Grouped (multi-tensor) Adam: one launch updates all `nparams` parameters.
  * ps/gs/ms/vs are arrays of per-parameter buffers and `sizes` their lengths
  * (all device-resident on the GPU backend). max_size is the largest length. */
 void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
-                     float eps, float bc1, float bc2);
-void adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
-                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
-                      float eps, float bc1, float bc2, float weight_decay);
+                     float eps, float bc1, float bc2, float weight_decay);
 
 #ifdef __cplusplus
 }

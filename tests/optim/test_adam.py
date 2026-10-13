@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import ember.optim as optim
 from ember import Tensor
@@ -102,3 +103,50 @@ class TestAdam:
         # meaningfully toward the minimum at 0 but not yet reached it (~1.5).
         assert t_param.to_np()[0] < 2.0
         assert t_param.to_np()[0] > 0.0
+
+
+@pytest.mark.parametrize("opt_cls", [optim.Adam, optim.AdamW])
+@pytest.mark.parametrize("mode", ["foreach", "capturable"])
+def test_variants_match_per_parameter_path(opt_cls, mode):
+    """The grouped and device-step-counter paths compute the same update as
+    the default one-launch-per-parameter path."""
+    rng = np.random.default_rng(0)
+    shapes = [(3, 4), (7,), (2, 5)]
+    init = [rng.standard_normal(s).astype(np.float32) for s in shapes]
+    grads = [
+        [rng.standard_normal(s).astype(np.float32) for s in shapes] for _ in range(4)
+    ]
+
+    def run(**kw):
+        params = [Tensor.from_np(a) for a in init]
+        opt = opt_cls(params, lr=1e-2, **kw)
+        for step in grads:
+            opt.apply([Tensor.from_np(g) for g in step])
+        return [p.to_np() for p in params]
+
+    # capturable computes the bias corrections in float32 on the device (the
+    # default path uses double on the host), so it agrees to float32 precision.
+    tol = {"rtol": 1e-6, "atol": 1e-7} if mode == "foreach" else {"rtol": 1e-5}
+    for a, b in zip(run(), run(**{mode: True}), strict=True):
+        np.testing.assert_allclose(a, b, **tol)
+
+
+def test_adam_is_adamw_without_weight_decay():
+    rng = np.random.default_rng(1)
+    init = rng.standard_normal((4, 3)).astype(np.float32)
+    grads = [rng.standard_normal((4, 3)).astype(np.float32) for _ in range(3)]
+
+    def run(opt_cls, **kw):
+        p = Tensor.from_np(init)
+        opt = opt_cls([p], lr=1e-2, **kw)
+        for g in grads:
+            opt.apply([Tensor.from_np(g)])
+        return p.to_np()
+
+    np.testing.assert_array_equal(run(optim.Adam), run(optim.AdamW, weight_decay=0.0))
+
+
+def test_missing_gradient_raises():
+    p = Tensor.from_np(np.ones((2,), dtype=np.float32))
+    with pytest.raises(ValueError, match="None"):
+        optim.Adam([p]).apply([None])

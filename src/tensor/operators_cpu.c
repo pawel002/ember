@@ -143,35 +143,28 @@ void gelu_bwd(const float *grad, const float *x, float *out, int n)
     }
 }
 
-/* ---- fused optimizer steps ----
- * mb1/mb2 are 1-beta1/1-beta2 and bc1/bc2 are the bias corrections
- * 1/(1-beta^t), both precomputed on the host (in double, then cast) so the
- * kernel reproduces the op-by-op float32 result exactly. */
-void adam_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-               float mb1, float beta2, float mb2, float eps, float bc1, float bc2)
+/* ---- fused optimizer steps ---- */
+
+/* One Adam/AdamW update of element i; see operators.h. */
+static inline void adam_update(float *p, const float *g, float *m, float *v, int i, float lr,
+                               float beta1, float mb1, float beta2, float mb2, float eps, float bc1,
+                               float bc2, float decay)
 {
-    for (int i = 0; i < size; i++) {
-        float gi = g[i];
-        float mi = beta1 * m[i] + mb1 * gi;
-        float vi = beta2 * v[i] + mb2 * gi * gi;
-        m[i] = mi;
-        v[i] = vi;
-        p[i] -= lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
-    }
+    float gi = g[i];
+    float mi = beta1 * m[i] + mb1 * gi;
+    float vi = beta2 * v[i] + mb2 * gi * gi;
+    m[i] = mi;
+    v[i] = vi;
+    p[i] = p[i] * decay - lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
 }
 
-void adamw_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
-                float weight_decay)
+void adam_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
+               float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
+               float weight_decay)
 {
-    for (int i = 0; i < size; i++) {
-        float gi = g[i];
-        float mi = beta1 * m[i] + mb1 * gi;
-        float vi = beta2 * v[i] + mb2 * gi * gi;
-        m[i] = mi;
-        v[i] = vi;
-        p[i] = p[i] * (1.0f - lr * weight_decay) - lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
-    }
+    float decay = 1.0f - lr * weight_decay;
+    for (int i = 0; i < size; i++)
+        adam_update(p, g, m, v, i, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, decay);
 }
 
 void sgd_step(float *p, const float *g, float *v, int size, float lr, float momentum)
@@ -185,23 +178,12 @@ void sgd_step(float *p, const float *g, float *v, int size, float lr, float mome
 
 void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
-                     float eps, float bc1, float bc2)
+                     float eps, float bc1, float bc2, float weight_decay)
 {
     (void)max_size;
     for (int pi = 0; pi < nparams; pi++) {
         adam_step(ps[pi], gs[pi], ms[pi], vs[pi], sizes[pi], lr, beta1, mb1, beta2, mb2, eps, bc1,
-                  bc2);
-    }
-}
-
-void adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
-                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
-                      float eps, float bc1, float bc2, float weight_decay)
-{
-    (void)max_size;
-    for (int pi = 0; pi < nparams; pi++) {
-        adamw_step(ps[pi], gs[pi], ms[pi], vs[pi], sizes[pi], lr, beta1, mb1, beta2, mb2, eps, bc1,
-                   bc2, weight_decay);
+                  bc2, weight_decay);
     }
 }
 
@@ -214,28 +196,8 @@ void adam_bias_update(float *t, float *bc, float beta1, float beta2)
 }
 
 void adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                   float mb1, float beta2, float mb2, float eps, const float *bc)
+                   float mb1, float beta2, float mb2, float eps, const float *bc,
+                   float weight_decay)
 {
-    for (int i = 0; i < size; i++) {
-        float gi = g[i];
-        float mi = beta1 * m[i] + mb1 * gi;
-        float vi = beta2 * v[i] + mb2 * gi * gi;
-        m[i] = mi;
-        v[i] = vi;
-        p[i] -= lr * (mi * bc[0]) / (sqrtf(vi * bc[1]) + eps);
-    }
-}
-
-void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                    float mb1, float beta2, float mb2, float eps, const float *bc,
-                    float weight_decay)
-{
-    for (int i = 0; i < size; i++) {
-        float gi = g[i];
-        float mi = beta1 * m[i] + mb1 * gi;
-        float vi = beta2 * v[i] + mb2 * gi * gi;
-        m[i] = mi;
-        v[i] = vi;
-        p[i] = p[i] * (1.0f - lr * weight_decay) - lr * (mi * bc[0]) / (sqrtf(vi * bc[1]) + eps);
-    }
+    adam_step(p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc[0], bc[1], weight_decay);
 }

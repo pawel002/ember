@@ -393,48 +393,35 @@ void gelu_bwd(const float *grad, const float *x, float *out, int n)
 }
 
 /* ---- fused optimizer steps ---- */
-__global__ void k_adam_step(float *p, const float *g, float *m, float *v, int size, float lr,
-                            float beta1, float mb1, float beta2, float mb2, float eps, float bc1,
-                            float bc2)
+
+// One Adam/AdamW update of element i; see operators.h.
+static __device__ __forceinline__ void adam_update(float *p, const float *g, float *m, float *v,
+                                                   int i, float lr, float beta1, float mb1,
+                                                   float beta2, float mb2, float eps, float bc1,
+                                                   float bc2, float decay)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= size) return;
     float gi = g[i];
     float mi = beta1 * m[i] + mb1 * gi;
     float vi = beta2 * v[i] + mb2 * gi * gi;
     m[i] = mi;
     v[i] = vi;
-    p[i] -= lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
+    p[i] = p[i] * decay - lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
+}
+
+__global__ void k_adam_step(float *p, const float *g, float *m, float *v, int size, float lr,
+                            float beta1, float mb1, float beta2, float mb2, float eps, float bc1,
+                            float bc2, float decay)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < size) adam_update(p, g, m, v, i, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, decay);
 }
 
 void adam_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-               float mb1, float beta2, float mb2, float eps, float bc1, float bc2)
+               float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
+               float weight_decay)
 {
     k_adam_step<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(
-        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2);
-    CUDA_POST_LAUNCH();
-}
-
-__global__ void k_adamw_step(float *p, const float *g, float *m, float *v, int size, float lr,
-                             float beta1, float mb1, float beta2, float mb2, float eps, float bc1,
-                             float bc2, float weight_decay)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= size) return;
-    float gi = g[i];
-    float mi = beta1 * m[i] + mb1 * gi;
-    float vi = beta2 * v[i] + mb2 * gi * gi;
-    m[i] = mi;
-    v[i] = vi;
-    p[i] = p[i] * (1.0f - lr * weight_decay) - lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
-}
-
-void adamw_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
-                float weight_decay)
-{
-    k_adamw_step<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(
-        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay);
+        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, 1.0f - lr * weight_decay);
     CUDA_POST_LAUNCH();
 }
 
@@ -456,68 +443,26 @@ void sgd_step(float *p, const float *g, float *v, int size, float lr, float mome
 /* ---- grouped (multi-tensor) Adam: one launch for all parameters ---- */
 __global__ void k_adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes,
                                   float lr, float beta1, float mb1, float beta2, float mb2,
-                                  float eps, float bc1, float bc2)
+                                  float eps, float bc1, float bc2, float decay)
 {
     int pi = blockIdx.y;  // one grid row per parameter
     int n = sizes[pi];
-    float *p = ps[pi];
-    const float *g = gs[pi];
-    float *m = ms[pi];
-    float *v = vs[pi];
-
-    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
-        float gi = g[i];
-        float mi = beta1 * m[i] + mb1 * gi;
-        float vi = beta2 * v[i] + mb2 * gi * gi;
-        m[i] = mi;
-        v[i] = vi;
-        p[i] -= lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
-    }
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x)
+        adam_update(ps[pi], gs[pi], ms[pi], vs[pi], i, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2,
+                    decay);
 }
 
 void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
-                     float eps, float bc1, float bc2)
+                     float eps, float bc1, float bc2, float weight_decay)
 {
     dim3 gdim(ember_grid(max_size), nparams);
-    k_adam_step_group<<<gdim, EMBER_BLOCK, 0, ember_stream()>>>(ps, gs, ms, vs, sizes, lr, beta1,
-                                                                mb1, beta2, mb2, eps, bc1, bc2);
+    k_adam_step_group<<<gdim, EMBER_BLOCK, 0, ember_stream()>>>(
+        ps, gs, ms, vs, sizes, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, 1.0f - lr * weight_decay);
     CUDA_POST_LAUNCH();
 }
 
-__global__ void k_adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes,
-                                   float lr, float beta1, float mb1, float beta2, float mb2,
-                                   float eps, float bc1, float bc2, float weight_decay)
-{
-    int pi = blockIdx.y;  // one grid row per parameter
-    int n = sizes[pi];
-    float *p = ps[pi];
-    const float *g = gs[pi];
-    float *m = ms[pi];
-    float *v = vs[pi];
-    float decay = 1.0f - lr * weight_decay;
-
-    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
-        float gi = g[i];
-        float mi = beta1 * m[i] + mb1 * gi;
-        float vi = beta2 * v[i] + mb2 * gi * gi;
-        m[i] = mi;
-        v[i] = vi;
-        p[i] = p[i] * decay - lr * (mi * bc1) / (sqrtf(vi * bc2) + eps);
-    }
-}
-
-void adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int *sizes, int nparams,
-                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
-                      float eps, float bc1, float bc2, float weight_decay)
-{
-    dim3 gdim(ember_grid(max_size), nparams);
-    k_adamw_step_group<<<gdim, EMBER_BLOCK, 0, ember_stream()>>>(
-        ps, gs, ms, vs, sizes, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay);
-    CUDA_POST_LAUNCH();
-}
-
-/* ---- capturable Adam/AdamW (on-device step counter + bias correction) ---- */
+/* ---- capturable Adam (on-device step counter + bias correction) ---- */
 __global__ void k_adam_bias(float *t, float *bc, float beta1, float beta2)
 {
     float tt = t[0] + 1.0f;
@@ -534,46 +479,18 @@ void adam_bias_update(float *t, float *bc, float beta1, float beta2)
 
 __global__ void k_adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr,
                                 float beta1, float mb1, float beta2, float mb2, float eps,
-                                const float *bc)
+                                const float *bc, float decay)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= size) return;
-    float gi = g[i];
-    float mi = beta1 * m[i] + mb1 * gi;
-    float vi = beta2 * v[i] + mb2 * gi * gi;
-    m[i] = mi;
-    v[i] = vi;
-    p[i] -= lr * (mi * bc[0]) / (sqrtf(vi * bc[1]) + eps);
+    if (i < size) adam_update(p, g, m, v, i, lr, beta1, mb1, beta2, mb2, eps, bc[0], bc[1], decay);
 }
 
 void adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                   float mb1, float beta2, float mb2, float eps, const float *bc)
+                   float mb1, float beta2, float mb2, float eps, const float *bc,
+                   float weight_decay)
 {
     k_adam_step_dev<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(
-        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc);
-    CUDA_POST_LAUNCH();
-}
-
-__global__ void k_adamw_step_dev(float *p, const float *g, float *m, float *v, int size, float lr,
-                                 float beta1, float mb1, float beta2, float mb2, float eps,
-                                 const float *bc, float weight_decay)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= size) return;
-    float gi = g[i];
-    float mi = beta1 * m[i] + mb1 * gi;
-    float vi = beta2 * v[i] + mb2 * gi * gi;
-    m[i] = mi;
-    v[i] = vi;
-    p[i] = p[i] * (1.0f - lr * weight_decay) - lr * (mi * bc[0]) / (sqrtf(vi * bc[1]) + eps);
-}
-
-void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
-                    float mb1, float beta2, float mb2, float eps, const float *bc,
-                    float weight_decay)
-{
-    k_adamw_step_dev<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(
-        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc, weight_decay);
+        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc, 1.0f - lr * weight_decay);
     CUDA_POST_LAUNCH();
 }
 }

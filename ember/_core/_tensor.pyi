@@ -159,22 +159,9 @@ def _bmm(
 def _embedding_fwd(weight: _Tensor, idx: NDArray, dim: int) -> _Tensor: ...
 def _embedding_bwd(dout: _Tensor, idx: NDArray, vocab: int, dim: int) -> _Tensor: ...
 
-# fused optimizer steps (mutate p, m, v in place)
+# fused optimizer steps (mutate p, m, v in place). Adam and AdamW share them:
+# weight_decay is AdamW's decoupled decay, and plain Adam passes 0.
 def _adam_step(
-    p: _Tensor,
-    g: _Tensor,
-    m: _Tensor,
-    v: _Tensor,
-    lr: float,
-    beta1: float,
-    mb1: float,
-    beta2: float,
-    mb2: float,
-    eps: float,
-    bc1: float,
-    bc2: float,
-) -> None: ...
-def _adamw_step(
     p: _Tensor,
     g: _Tensor,
     m: _Tensor,
@@ -207,39 +194,12 @@ def _adam_step_group(
     eps: float,
     bc1: float,
     bc2: float,
-) -> None: ...
-def _adamw_step_group(
-    params: list[_Tensor],
-    grads: list[_Tensor],
-    means: list[_Tensor],
-    variances: list[_Tensor],
-    lr: float,
-    beta1: float,
-    mb1: float,
-    beta2: float,
-    mb2: float,
-    eps: float,
-    bc1: float,
-    bc2: float,
     weight_decay: float,
 ) -> None: ...
 
-# capturable Adam/AdamW: device-side step counter (t) and bias corrections (bc)
+# capturable Adam: device-side step counter (t) and bias corrections (bc)
 def _adam_bias_update(t: _Tensor, bc: _Tensor, beta1: float, beta2: float) -> None: ...
 def _adam_step_dev(
-    p: _Tensor,
-    g: _Tensor,
-    m: _Tensor,
-    v: _Tensor,
-    lr: float,
-    beta1: float,
-    mb1: float,
-    beta2: float,
-    mb2: float,
-    eps: float,
-    bc: _Tensor,
-) -> None: ...
-def _adamw_step_dev(
     p: _Tensor,
     g: _Tensor,
     m: _Tensor,

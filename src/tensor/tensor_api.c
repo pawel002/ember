@@ -523,22 +523,9 @@ static PyObject *_gelu_bwd(PyObject *module, PyObject *args)
     return (PyObject *)result;
 }
 
-/* ---- fused optimizer steps (mutate p, m, v in place) ---- */
+/* ---- fused optimizer steps (mutate p, m, v in place) ----
+ * Adam and AdamW share these: plain Adam passes weight_decay = 0. */
 static PyObject *_adam_step(PyObject *module, PyObject *args)
-{
-    _Tensor *p, *g, *m, *v;
-    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2;
-    if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffff", &_TensorType, &p, &_TensorType, &g,
-                          &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
-                          &bc1, &bc2))
-        return NULL;
-
-    adam_step(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps, bc1,
-              bc2);
-    Py_RETURN_NONE;
-}
-
-static PyObject *_adamw_step(PyObject *module, PyObject *args)
 {
     _Tensor *p, *g, *m, *v;
     float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay;
@@ -547,8 +534,8 @@ static PyObject *_adamw_step(PyObject *module, PyObject *args)
                           &bc1, &bc2, &weight_decay))
         return NULL;
 
-    adamw_step(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
-               bc1, bc2, weight_decay);
+    adam_step(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps, bc1,
+              bc2, weight_decay);
     Py_RETURN_NONE;
 }
 
@@ -564,8 +551,6 @@ static PyObject *_sgd_step(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
-/* Grouped Adam: one launch updates every parameter. Takes lists of the per-
- * parameter tensors and builds the device pointer arrays for the kernel. */
 /* ---- grouped (multi-tensor) optimizer steps ----
  * One kernel updates every parameter, so a 100-parameter model costs one launch
  * per step instead of 100. The kernel reads the per-parameter buffer pointers
@@ -702,68 +687,32 @@ static int _group_sync(PyObject *pl, PyObject *gl, PyObject *ml, PyObject *vl, i
     return 1;
 }
 
-static int _group_parse(PyObject *args, PyObject **pl, PyObject **gl, PyObject **ml, PyObject **vl,
-                        float *lr, float *beta1, float *mb1, float *beta2, float *mb2, float *eps,
-                        float *bc1, float *bc2, float *wd, int with_wd)
-{
-    if (with_wd) {
-        if (!PyArg_ParseTuple(args, "O!O!O!O!fffffffff", &PyList_Type, pl, &PyList_Type, gl,
-                              &PyList_Type, ml, &PyList_Type, vl, lr, beta1, mb1, beta2, mb2, eps,
-                              bc1, bc2, wd))
-            return 0;
-    } else if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffff", &PyList_Type, pl, &PyList_Type, gl,
-                                 &PyList_Type, ml, &PyList_Type, vl, lr, beta1, mb1, beta2, mb2,
-                                 eps, bc1, bc2)) {
-        return 0;
-    }
-
-    Py_ssize_t n = PyList_Size(*pl);
-    if (PyList_Size(*gl) != n || PyList_Size(*ml) != n || PyList_Size(*vl) != n) {
-        PyErr_SetString(PyExc_ValueError, "grouped optimizer: parameter list lengths differ");
-        return 0;
-    }
-    return 1;
-}
-
 static PyObject *_adam_step_group(PyObject *module, PyObject *args)
 {
     PyObject *pl, *gl, *ml, *vl;
-    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, wd = 0.0f;
-    if (!_group_parse(args, &pl, &gl, &ml, &vl, &lr, &beta1, &mb1, &beta2, &mb2, &eps, &bc1, &bc2,
-                      &wd, 0))
+    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay;
+    if (!PyArg_ParseTuple(args, "O!O!O!O!fffffffff", &PyList_Type, &pl, &PyList_Type, &gl,
+                          &PyList_Type, &ml, &PyList_Type, &vl, &lr, &beta1, &mb1, &beta2, &mb2,
+                          &eps, &bc1, &bc2, &weight_decay))
         return NULL;
 
-    int nparams = (int)PyList_Size(pl);
+    Py_ssize_t n = PyList_Size(pl);
+    if (PyList_Size(gl) != n || PyList_Size(ml) != n || PyList_Size(vl) != n) {
+        PyErr_SetString(PyExc_ValueError, "grouped optimizer: parameter list lengths differ");
+        return NULL;
+    }
+    int nparams = (int)n;
     if (nparams == 0) Py_RETURN_NONE;
 
     int max_size = 0;
     if (!_group_sync(pl, gl, ml, vl, nparams, &max_size)) return NULL;
 
     adam_step_group(g_group.dp, g_group.dg, g_group.dm, g_group.dv, g_group.ds, nparams, max_size,
-                    lr, beta1, mb1, beta2, mb2, eps, bc1, bc2);
+                    lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay);
     Py_RETURN_NONE;
 }
 
-static PyObject *_adamw_step_group(PyObject *module, PyObject *args)
-{
-    PyObject *pl, *gl, *ml, *vl;
-    float lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, wd;
-    if (!_group_parse(args, &pl, &gl, &ml, &vl, &lr, &beta1, &mb1, &beta2, &mb2, &eps, &bc1, &bc2,
-                      &wd, 1))
-        return NULL;
-
-    int nparams = (int)PyList_Size(pl);
-    if (nparams == 0) Py_RETURN_NONE;
-
-    int max_size = 0;
-    if (!_group_sync(pl, gl, ml, vl, nparams, &max_size)) return NULL;
-
-    adamw_step_group(g_group.dp, g_group.dg, g_group.dm, g_group.dv, g_group.ds, nparams, max_size,
-                     lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, wd);
-    Py_RETURN_NONE;
-}
-
-/* ---- capturable Adam/AdamW (device-side step counter + bias correction) ---- */
+/* ---- capturable Adam (device-side step counter + bias correction) ---- */
 static PyObject *_adam_bias_update(PyObject *module, PyObject *args)
 {
     _Tensor *t, *bc;
@@ -778,28 +727,14 @@ static PyObject *_adam_bias_update(PyObject *module, PyObject *args)
 static PyObject *_adam_step_dev(PyObject *module, PyObject *args)
 {
     _Tensor *p, *g, *m, *v, *bc;
-    float lr, beta1, mb1, beta2, mb2, eps;
-    if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffO!", &_TensorType, &p, &_TensorType, &g,
-                          &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
-                          &_TensorType, &bc))
-        return NULL;
-
-    adam_step_dev(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
-                  bc->d_ptr);
-    Py_RETURN_NONE;
-}
-
-static PyObject *_adamw_step_dev(PyObject *module, PyObject *args)
-{
-    _Tensor *p, *g, *m, *v, *bc;
     float lr, beta1, mb1, beta2, mb2, eps, weight_decay;
     if (!PyArg_ParseTuple(args, "O!O!O!O!ffffffO!f", &_TensorType, &p, &_TensorType, &g,
                           &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
                           &_TensorType, &bc, &weight_decay))
         return NULL;
 
-    adamw_step_dev(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
-                   bc->d_ptr, weight_decay);
+    adam_step_dev(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
+                  bc->d_ptr, weight_decay);
     Py_RETURN_NONE;
 }
 
@@ -894,13 +829,10 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_max_axis),
     OP_METHOD(_gelu_bwd),
     OP_METHOD(_adam_step),
-    OP_METHOD(_adamw_step),
     OP_METHOD(_sgd_step),
     OP_METHOD(_adam_step_group),
-    OP_METHOD(_adamw_step_group),
     OP_METHOD(_adam_bias_update),
     OP_METHOD(_adam_step_dev),
-    OP_METHOD(_adamw_step_dev),
 
     // device / CUDA-graph control
     {"_sync", (PyCFunction)_sync, METH_VARARGS, "Synchronize the device"},

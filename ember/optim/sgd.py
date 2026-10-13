@@ -26,13 +26,9 @@ class SGD(Optimizer):
     def _state_tensors(self) -> dict[str, list[Tensor]]:
         return {"velocities": self.velocities}
 
-    def apply(self, gradients: list[Tensor]) -> None:
-        if len(gradients) != len(self.parameters):
-            raise ValueError(
-                f"Optimizer expected {len(self.parameters)} gradients, "
-                f"but got {len(gradients)}"
-            )
+    def apply(self, gradients: list[Tensor | None]) -> None:
+        grads = self._check_gradients(gradients)
 
         # One fused, in-place kernel launch per parameter.
-        for p, v, g in zip(self.parameters, self.velocities, gradients, strict=True):
+        for p, v, g in zip(self.parameters, self.velocities, grads, strict=True):
             _sgd_step(p._core, g._core, v._core, self.lr, self.momentum)

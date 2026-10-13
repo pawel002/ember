@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -14,8 +15,25 @@ class Optimizer(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def apply(self, gradients: list[Tensor]) -> None:
+    def apply(self, gradients: list[Tensor | None]) -> None:
         raise NotImplementedError
+
+    def _check_gradients(self, gradients: Sequence[Tensor | None]) -> list[Tensor]:
+        """Validate the list passed to :meth:`apply`: one gradient per
+        parameter, none of them missing."""
+        if len(gradients) != len(self.parameters):
+            raise ValueError(
+                f"Optimizer expected {len(self.parameters)} gradients, "
+                f"but got {len(gradients)}"
+            )
+        checked = []
+        for i, g in enumerate(gradients):
+            if g is None:
+                raise ValueError(
+                    f"gradient {i} is None; run the model's backward() before apply()"
+                )
+            checked.append(g)
+        return checked
 
     # Per-parameter state buffers (e.g. Adam's means / variances), one list
     # entry per parameter, in parameter order. Subclasses with state override.

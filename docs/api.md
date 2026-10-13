@@ -323,7 +323,7 @@ Adam optimizer.
   - `capturable` (bool): Keep the step counter and bias corrections on-device so
     the update stays exact under CUDA-graph capture.
   - `foreach` (bool): Update every parameter in one grouped kernel launch
-    instead of one launch per parameter. Ignored when `capturable=True`.
+    instead of one launch per parameter. Cannot be combined with `capturable`.
 
 #### `ember.optim.AdamW(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01, capturable=False, foreach=False)`
 Adam with decoupled weight decay (`p *= 1 - lr*weight_decay` applied directly to
