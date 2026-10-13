@@ -71,13 +71,6 @@ void matmul(const float *a, const float *b, float *out, int n, int m, int k)
     }
 }
 
-void matmul_batched(const float *a, const float *b, float *out, int batch, int n, int m, int k)
-{
-    for (int bi = 0; bi < batch; bi++) {
-        matmul(a + (size_t)bi * n * k, b + (size_t)bi * k * m, out + (size_t)bi * n * m, n, m, k);
-    }
-}
-
 void matmul_bias(const float *a, const float *b, const float *bias, float *out, int n, int m, int k)
 {
     matmul(a, b, out, n, m, k);

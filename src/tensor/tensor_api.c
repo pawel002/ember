@@ -6,6 +6,7 @@
 #include "operators.h"
 #include "tensor_helpers.h"
 #include "tensor_module.h"
+#include "transformer.h"
 
 typedef void (*binary_tensor_op_func)(const float *, const float *, float *, int);
 typedef void (*binary_scalar_op_func)(const float *, float, float *, int);
@@ -445,7 +446,7 @@ static PyObject *_matmul_batched(PyObject *module, PyObject *args)
     _Tensor *result = alloc_result(batch * n * m);
     if (!result) return NULL;
 
-    matmul_batched(a->d_ptr, b->d_ptr, result->d_ptr, batch, n, m, k);
+    bmm(a->d_ptr, b->d_ptr, result->d_ptr, batch, n, m, k, 0, 0, 1.0f);
     return (PyObject *)result;
 }
 

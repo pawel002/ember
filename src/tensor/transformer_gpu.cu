@@ -6,53 +6,6 @@
 #include "../core/utils_gpu.cuh"
 #include "transformer.h"
 
-#define TBLOCK 256  // threads per block for the block-per-row kernels (power of 2)
-
-static int grid1(int n)
-{
-    return (n + TBLOCK - 1) / TBLOCK;
-}
-
-#define CUDA_POST_LAUNCH() GPU_ERR_CHK(cudaGetLastError())
-
-// Own cuBLAS handle (the one in operators_gpu.cu is file-local). Created lazily,
-// reused for the process lifetime, always bound to the ember stream.
-static cublasHandle_t tf_cublas(void)
-{
-    static cublasHandle_t handle = NULL;
-    if (!handle) CUBLAS_ERR_CHK(cublasCreate(&handle));
-    return handle;
-}
-
-/* ---- block reductions (blockDim must be a power of two) ---- */
-__device__ __forceinline__ float block_reduce_sum(float v, float *sh)
-{
-    int tid = threadIdx.x;
-    sh[tid] = v;
-    __syncthreads();
-    for (int s = blockDim.x >> 1; s > 0; s >>= 1) {
-        if (tid < s) sh[tid] += sh[tid + s];
-        __syncthreads();
-    }
-    float r = sh[0];
-    __syncthreads();
-    return r;
-}
-
-__device__ __forceinline__ float block_reduce_max(float v, float *sh)
-{
-    int tid = threadIdx.x;
-    sh[tid] = v;
-    __syncthreads();
-    for (int s = blockDim.x >> 1; s > 0; s >>= 1) {
-        if (tid < s) sh[tid] = fmaxf(sh[tid], sh[tid + s]);
-        __syncthreads();
-    }
-    float r = sh[0];
-    __syncthreads();
-    return r;
-}
-
 /* ================= softmax ================= */
 
 // Generic, stable softmax over one strided axis (outer * inner output rows,
@@ -84,7 +37,8 @@ __global__ void k_softmax_axis(const float *x, float *out, int outer, int inner,
 extern "C" void softmax_axis(const float *x, float *out, int outer, int inner, int axis_dim)
 {
     int total = outer * inner;
-    k_softmax_axis<<<grid1(total), TBLOCK, 0, ember_stream()>>>(x, out, outer, inner, axis_dim);
+    k_softmax_axis<<<ember_grid(total), EMBER_BLOCK, 0, ember_stream()>>>(x, out, outer, inner,
+                                                                          axis_dim);
     CUDA_POST_LAUNCH();
 }
 
@@ -132,14 +86,14 @@ extern "C" void softmax_axis_bwd(const float *dout, const float *y, float *dx, i
                                  int axis_dim)
 {
     if (inner == 1) {
-        k_softmax_rows_bwd<<<outer, TBLOCK, TBLOCK * sizeof(float), ember_stream()>>>(
+        k_softmax_rows_bwd<<<outer, EMBER_BLOCK, EMBER_BLOCK * sizeof(float), ember_stream()>>>(
             dout, y, dx, outer, axis_dim);
         CUDA_POST_LAUNCH();
         return;
     }
     int total = outer * inner;
-    k_softmax_axis_bwd<<<grid1(total), TBLOCK, 0, ember_stream()>>>(dout, y, dx, outer, inner,
-                                                                    axis_dim);
+    k_softmax_axis_bwd<<<ember_grid(total), EMBER_BLOCK, 0, ember_stream()>>>(dout, y, dx, outer,
+                                                                              inner, axis_dim);
     CUDA_POST_LAUNCH();
 }
 
@@ -170,14 +124,15 @@ __global__ void k_softmax_rows(const float *x, float *out, int rows, int D, int 
 
 extern "C" void softmax_rows(const float *x, float *out, int rows, int D)
 {
-    k_softmax_rows<<<rows, TBLOCK, TBLOCK * sizeof(float), ember_stream()>>>(x, out, rows, D, 0, 0);
+    k_softmax_rows<<<rows, EMBER_BLOCK, EMBER_BLOCK * sizeof(float), ember_stream()>>>(x, out, rows,
+                                                                                       D, 0, 0);
     CUDA_POST_LAUNCH();
 }
 
 extern "C" void softmax_rows_causal(const float *x, float *out, int rows, int D, int sq)
 {
-    k_softmax_rows<<<rows, TBLOCK, TBLOCK * sizeof(float), ember_stream()>>>(x, out, rows, D, 1,
-                                                                             sq);
+    k_softmax_rows<<<rows, EMBER_BLOCK, EMBER_BLOCK * sizeof(float), ember_stream()>>>(x, out, rows,
+                                                                                       D, 1, sq);
     CUDA_POST_LAUNCH();
 }
 
@@ -216,8 +171,8 @@ __global__ void k_layernorm_fwd(const float *x, const float *gamma, const float 
 extern "C" void layernorm_fwd(const float *x, const float *gamma, const float *beta, float *out,
                               float *mean, float *rstd, int N, int D, float eps)
 {
-    k_layernorm_fwd<<<N, TBLOCK, TBLOCK * sizeof(float), ember_stream()>>>(x, gamma, beta, out,
-                                                                           mean, rstd, N, D, eps);
+    k_layernorm_fwd<<<N, EMBER_BLOCK, EMBER_BLOCK * sizeof(float), ember_stream()>>>(
+        x, gamma, beta, out, mean, rstd, N, D, eps);
     CUDA_POST_LAUNCH();
 }
 
@@ -311,7 +266,7 @@ __global__ void k_layernorm_bwd_blocked(const float *dout, const float *x, const
     }
 }
 
-// Shared-memory budget for the blocked kernel: TBLOCK reduction slots + 2*D
+// Shared-memory budget for the blocked kernel: EMBER_BLOCK reduction slots + 2*D
 // accumulators. Past this we fall back to the per-row kernel.
 #define LN_BWD_MAX_SHARED_FLOATS 6144
 
@@ -322,17 +277,17 @@ extern "C" void layernorm_bwd(const float *dout, const float *x, const float *ga
     GPU_ERR_CHK(cudaMemsetAsync(dgamma, 0, (size_t)D * sizeof(float), ember_stream()));
     GPU_ERR_CHK(cudaMemsetAsync(dbeta, 0, (size_t)D * sizeof(float), ember_stream()));
 
-    size_t floats = (size_t)TBLOCK + 2 * (size_t)D;
+    size_t floats = (size_t)EMBER_BLOCK + 2 * (size_t)D;
     if (floats <= LN_BWD_MAX_SHARED_FLOATS) {
         // Enough blocks to fill the device, few enough that each owns a strip
         // of rows (which is what collapses the atomic traffic).
         int blocks = N < 1024 ? N : 1024;
-        k_layernorm_bwd_blocked<<<blocks, TBLOCK, floats * sizeof(float), ember_stream()>>>(
+        k_layernorm_bwd_blocked<<<blocks, EMBER_BLOCK, floats * sizeof(float), ember_stream()>>>(
             dout, x, gamma, mean, rstd, dx, dgamma, dbeta, N, D);
         CUDA_POST_LAUNCH();
         return;
     }
-    k_layernorm_bwd<<<N, TBLOCK, TBLOCK * sizeof(float), ember_stream()>>>(
+    k_layernorm_bwd<<<N, EMBER_BLOCK, EMBER_BLOCK * sizeof(float), ember_stream()>>>(
         dout, x, gamma, mean, rstd, dx, dgamma, dbeta, N, D);
     CUDA_POST_LAUNCH();
 }
@@ -359,7 +314,7 @@ __global__ void k_permute_0213(const float *x, float *out, int d0, int d1, int d
 extern "C" void permute_0213(const float *x, float *out, int d0, int d1, int d2, int d3)
 {
     int total = d0 * d1 * d2 * d3;
-    k_permute_0213<<<grid1(total), TBLOCK, 0, ember_stream()>>>(x, out, d0, d1, d2, d3);
+    k_permute_0213<<<ember_grid(total), EMBER_BLOCK, 0, ember_stream()>>>(x, out, d0, d1, d2, d3);
     CUDA_POST_LAUNCH();
 }
 
@@ -377,15 +332,15 @@ extern "C" void bmm(const float *a, const float *b, float *out, int batch, int n
     int ldb = transB ? k : m;
     float beta = 0.0f;
 
-    ember_cublas_prepare(tf_cublas());
+    cublasHandle_t handle = ember_cublas();
     if (batch == 1) {
         // Plain GEMM: the strided-batched entry point has extra setup cost and
         // this is the hot path for Linear.backward (two OP_T products each).
         CUBLAS_ERR_CHK(
-            cublasSgemm(tf_cublas(), opB, opA, m, n, k, &alpha, b, ldb, a, lda, &beta, out, m));
+            cublasSgemm(handle, opB, opA, m, n, k, &alpha, b, ldb, a, lda, &beta, out, m));
         return;
     }
-    CUBLAS_ERR_CHK(cublasSgemmStridedBatched(tf_cublas(), opB, opA, m, n, k, &alpha, b, ldb,
+    CUBLAS_ERR_CHK(cublasSgemmStridedBatched(handle, opB, opA, m, n, k, &alpha, b, ldb,
                                              (long long)k * m, a, lda, (long long)n * k, &beta, out,
                                              m, (long long)n * m, batch));
 }
@@ -405,7 +360,8 @@ __global__ void k_embedding_fwd(const float *weight, const int *idx, float *out,
 extern "C" void embedding_fwd(const float *weight, const int *idx, float *out, int n_idx, int dim)
 {
     int total = n_idx * dim;
-    k_embedding_fwd<<<grid1(total), TBLOCK, 0, ember_stream()>>>(weight, idx, out, n_idx, dim);
+    k_embedding_fwd<<<ember_grid(total), EMBER_BLOCK, 0, ember_stream()>>>(weight, idx, out, n_idx,
+                                                                           dim);
     CUDA_POST_LAUNCH();
 }
 
@@ -425,6 +381,7 @@ extern "C" void embedding_bwd(const float *dout, const int *idx, float *dweight,
 {
     GPU_ERR_CHK(cudaMemsetAsync(dweight, 0, (size_t)vocab * dim * sizeof(float), ember_stream()));
     int total = n_idx * dim;
-    k_embedding_bwd<<<grid1(total), TBLOCK, 0, ember_stream()>>>(dout, idx, dweight, n_idx, dim);
+    k_embedding_bwd<<<ember_grid(total), EMBER_BLOCK, 0, ember_stream()>>>(dout, idx, dweight,
+                                                                           n_idx, dim);
     CUDA_POST_LAUNCH();
 }

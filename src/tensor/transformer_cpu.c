@@ -152,13 +152,14 @@ void bmm(const float *a, const float *b, float *out, int batch, int n, int m, in
         float *C = out + (size_t)bt * n * m;
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < m; j++) {
-                float acc = 0.0f;
+                // Accumulate in double, like matmul() in operators_cpu.c.
+                double acc = 0.0;
                 for (int l = 0; l < k; l++) {
                     float av = transA ? A[l * n + i] : A[i * k + l];
                     float bv = transB ? B[j * k + l] : B[l * m + j];
-                    acc += av * bv;
+                    acc += (double)av * (double)bv;
                 }
-                C[i * m + j] = alpha * acc;
+                C[i * m + j] = (float)(alpha * acc);
             }
         }
     }

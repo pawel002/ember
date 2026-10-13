@@ -7,66 +7,43 @@
 #include "../core/utils_gpu.cuh"
 #include "operators.h"
 
-#define BLOCK_SIZE 256
-
-// Check for launch-configuration errors immediately after a kernel launch.
-// Asynchronous execution errors surface at the next device synchronization
-// (which happens on every host<->device transfer).
-#define CUDA_POST_LAUNCH() GPU_ERR_CHK(cudaGetLastError())
-
-static int grid(int n)
-{
-    return (n + BLOCK_SIZE - 1) / BLOCK_SIZE;
-}
-
-// A single cuBLAS handle is created lazily and reused for the process lifetime,
-// rather than being created and destroyed on every matmul.
-static cublasHandle_t cublas_handle(void)
-{
-    static cublasHandle_t handle = NULL;
-    if (!handle) {
-        CUBLAS_ERR_CHK(cublasCreate(&handle));
-    }
-    return handle;
-}
-
 /* Element-wise CUDA kernels + host wrappers, generated from operators.def.
  * Kernels keep C++ linkage (called only within this file); the wrappers that
  * the rest of the library links against get C linkage. */
-#define EMBER_BINARY_OP(name, expr)                                                         \
-    __global__ void k_##name##_tensor(const float *a, const float *b, float *out, int size) \
-    {                                                                                       \
-        int i = blockIdx.x * blockDim.x + threadIdx.x;                                      \
-        if (i < size) out[i] = (expr);                                                      \
-    }                                                                                       \
-    extern "C" void name##_tensor(const float *a, const float *b, float *out, int size)     \
-    {                                                                                       \
-        k_##name##_tensor<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(a, b, out, size);  \
-        CUDA_POST_LAUNCH();                                                                 \
+#define EMBER_BINARY_OP(name, expr)                                                               \
+    __global__ void k_##name##_tensor(const float *a, const float *b, float *out, int size)       \
+    {                                                                                             \
+        int i = blockIdx.x * blockDim.x + threadIdx.x;                                            \
+        if (i < size) out[i] = (expr);                                                            \
+    }                                                                                             \
+    extern "C" void name##_tensor(const float *a, const float *b, float *out, int size)           \
+    {                                                                                             \
+        k_##name##_tensor<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(a, b, out, size); \
+        CUDA_POST_LAUNCH();                                                                       \
     }
 
-#define EMBER_SCALAR_OP(name, expr)                                                        \
-    __global__ void k_##name##_scalar(const float *a, float b, float *out, int size)       \
-    {                                                                                      \
-        int i = blockIdx.x * blockDim.x + threadIdx.x;                                     \
-        if (i < size) out[i] = (expr);                                                     \
-    }                                                                                      \
-    extern "C" void name##_scalar(const float *a, float b, float *out, int size)           \
-    {                                                                                      \
-        k_##name##_scalar<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(a, b, out, size); \
-        CUDA_POST_LAUNCH();                                                                \
+#define EMBER_SCALAR_OP(name, expr)                                                               \
+    __global__ void k_##name##_scalar(const float *a, float b, float *out, int size)              \
+    {                                                                                             \
+        int i = blockIdx.x * blockDim.x + threadIdx.x;                                            \
+        if (i < size) out[i] = (expr);                                                            \
+    }                                                                                             \
+    extern "C" void name##_scalar(const float *a, float b, float *out, int size)                  \
+    {                                                                                             \
+        k_##name##_scalar<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(a, b, out, size); \
+        CUDA_POST_LAUNCH();                                                                       \
     }
 
-#define EMBER_UNARY_OP(name, expr)                                                      \
-    __global__ void k_##name##_tensor(const float *a, float *out, int size)             \
-    {                                                                                   \
-        int i = blockIdx.x * blockDim.x + threadIdx.x;                                  \
-        if (i < size) out[i] = (expr);                                                  \
-    }                                                                                   \
-    extern "C" void name##_tensor(const float *a, float *out, int size)                 \
-    {                                                                                   \
-        k_##name##_tensor<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(a, out, size); \
-        CUDA_POST_LAUNCH();                                                             \
+#define EMBER_UNARY_OP(name, expr)                                                             \
+    __global__ void k_##name##_tensor(const float *a, float *out, int size)                    \
+    {                                                                                          \
+        int i = blockIdx.x * blockDim.x + threadIdx.x;                                         \
+        if (i < size) out[i] = (expr);                                                         \
+    }                                                                                          \
+    extern "C" void name##_tensor(const float *a, float *out, int size)                        \
+    {                                                                                          \
+        k_##name##_tensor<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(a, out, size); \
+        CUDA_POST_LAUNCH();                                                                    \
     }
 
 // Broadcast metadata is passed by value as a kernel parameter (no device
@@ -110,32 +87,34 @@ struct BcastMeta {
             total *= shape[d];                                                                   \
         }                                                                                        \
         meta.total = total;                                                                      \
-        k_##name##_broadcasted<<<grid(total), BLOCK_SIZE, 0, ember_stream()>>>(a, b, out, meta); \
+        k_##name##_broadcasted<<<ember_grid(total), EMBER_BLOCK, 0, ember_stream()>>>(a, b, out, \
+                                                                                      meta);     \
         CUDA_POST_LAUNCH();                                                                      \
     }
 
-#define EMBER_INPLACE_OP(name, expr)                                                   \
-    __global__ void k_##name##_inplace(float *a, const float *b, int size)             \
-    {                                                                                  \
-        int i = blockIdx.x * blockDim.x + threadIdx.x;                                 \
-        if (i < size) a[i] = (expr);                                                   \
-    }                                                                                  \
-    extern "C" void name##_inplace(float *a, const float *b, int size)                 \
-    {                                                                                  \
-        k_##name##_inplace<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(a, b, size); \
-        CUDA_POST_LAUNCH();                                                            \
-    }
-
-#define EMBER_INPLACE_SCALAR_OP(name, expr)                                                   \
-    __global__ void k_##name##_scalar_inplace(float *a, float b, int size)                    \
+#define EMBER_INPLACE_OP(name, expr)                                                          \
+    __global__ void k_##name##_inplace(float *a, const float *b, int size)                    \
     {                                                                                         \
         int i = blockIdx.x * blockDim.x + threadIdx.x;                                        \
         if (i < size) a[i] = (expr);                                                          \
     }                                                                                         \
-    extern "C" void name##_scalar_inplace(float *a, float b, int size)                        \
+    extern "C" void name##_inplace(float *a, const float *b, int size)                        \
     {                                                                                         \
-        k_##name##_scalar_inplace<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(a, b, size); \
+        k_##name##_inplace<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(a, b, size); \
         CUDA_POST_LAUNCH();                                                                   \
+    }
+
+#define EMBER_INPLACE_SCALAR_OP(name, expr)                                                    \
+    __global__ void k_##name##_scalar_inplace(float *a, float b, int size)                     \
+    {                                                                                          \
+        int i = blockIdx.x * blockDim.x + threadIdx.x;                                         \
+        if (i < size) a[i] = (expr);                                                           \
+    }                                                                                          \
+    extern "C" void name##_scalar_inplace(float *a, float b, int size)                         \
+    {                                                                                          \
+        k_##name##_scalar_inplace<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(a, b,  \
+                                                                                        size); \
+        CUDA_POST_LAUNCH();                                                                    \
     }
 
 #include "operators.def"
@@ -177,22 +156,8 @@ void matmul(const float *a, const float *b, float *out, int n, int m, int k)
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
-    ember_cublas_prepare(cublas_handle());
-    CUBLAS_ERR_CHK(cublasSgemm(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, b, m, a,
+    CUBLAS_ERR_CHK(cublasSgemm(ember_cublas(), CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, b, m, a,
                                k, &beta, out, m));
-}
-
-void matmul_batched(const float *a, const float *b, float *out, int batch, int n, int m, int k)
-{
-    // Same column-major mapping as matmul(), applied to `batch` independent
-    // matrices with fixed strides between them.
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
-    ember_cublas_prepare(cublas_handle());
-    CUBLAS_ERR_CHK(cublasSgemmStridedBatched(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
-                                             &alpha, b, m, (long long)k * m, a, k, (long long)n * k,
-                                             &beta, out, m, (long long)n * m, batch));
 }
 
 __global__ void k_bias_add_rows(float *out, const float *bias, int n, int m)
@@ -204,7 +169,7 @@ __global__ void k_bias_add_rows(float *out, const float *bias, int n, int m)
 void matmul_bias(const float *a, const float *b, const float *bias, float *out, int n, int m, int k)
 {
     matmul(a, b, out, n, m, k);
-    k_bias_add_rows<<<grid(n * m), BLOCK_SIZE, 0, ember_stream()>>>(out, bias, n, m);
+    k_bias_add_rows<<<ember_grid(n * m), EMBER_BLOCK, 0, ember_stream()>>>(out, bias, n, m);
     CUDA_POST_LAUNCH();
 }
 
@@ -223,12 +188,6 @@ void transpose(const float *a, float *out, int n, int m)
     CUDA_POST_LAUNCH();
 }
 
-__inline__ __device__ float warp_reduce_sum(float v)
-{
-    for (int off = warpSize / 2; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
-    return v;
-}
-
 __global__ void k_sum_reduce(const float *a, float *out, int size)
 {
     // Grid-stride load (multiple elements per thread), then a warp-shuffle
@@ -242,7 +201,7 @@ __global__ void k_sum_reduce(const float *a, float *out, int size)
 
     v = warp_reduce_sum(v);
 
-    __shared__ float warp_sums[BLOCK_SIZE / 32];
+    __shared__ float warp_sums[EMBER_BLOCK / 32];
     int lane = tid & (warpSize - 1);
     int wid = tid / warpSize;
     if (lane == 0) warp_sums[wid] = v;
@@ -263,10 +222,10 @@ float sum(const float *a, int size)
     float *d_out = (float *)alloc_memory(sizeof(float));
     GPU_ERR_CHK(cudaMemsetAsync(d_out, 0, sizeof(float), ember_stream()));
 
-    int blocks = grid(size);
+    int blocks = ember_grid(size);
     if (blocks > 256) blocks = 256;
     if (blocks < 1) blocks = 1;
-    k_sum_reduce<<<blocks, BLOCK_SIZE, 0, ember_stream()>>>(a, d_out, size);
+    k_sum_reduce<<<blocks, EMBER_BLOCK, 0, ember_stream()>>>(a, d_out, size);
     CUDA_POST_LAUNCH();
 
     float result = 0.0f;
@@ -296,20 +255,6 @@ __global__ void k_sum_axis(const float *a, float *out, int outer_stride, int inn
     float s = 0.0f;
     for (int r = 0; r < axis_dim; r++) s += a[input_base + (r * inner_stride)];
     out[idx] = s;
-}
-
-__device__ __forceinline__ float block_reduce_sum(float v, float *sh)
-{
-    int tid = threadIdx.x;
-    sh[tid] = v;
-    __syncthreads();
-    for (int s = blockDim.x >> 1; s > 0; s >>= 1) {
-        if (tid < s) sh[tid] += sh[tid + s];
-        __syncthreads();
-    }
-    float r = sh[0];
-    __syncthreads();
-    return r;
 }
 
 // Contiguous last-axis reduction (inner_stride == 1): block-per-row with a
@@ -364,7 +309,7 @@ void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, in
 {
     int total = outer_stride * inner_stride;
     if (inner_stride == 1) {
-        k_sum_axis_rows<<<outer_stride, BLOCK_SIZE, BLOCK_SIZE * sizeof(float), ember_stream()>>>(
+        k_sum_axis_rows<<<outer_stride, EMBER_BLOCK, EMBER_BLOCK * sizeof(float), ember_stream()>>>(
             a, out, outer_stride, axis_dim);
         CUDA_POST_LAUNCH();
         return;
@@ -374,7 +319,7 @@ void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, in
         // combine pass (which has only `inner_stride` outputs to spread over
         // the device) stays cheap. Measured optimum on Ada for the bias-
         // gradient shapes; beyond ~256 strips the combine starts to dominate.
-        int cols = grid(inner_stride);
+        int cols = ember_grid(inner_stride);
         int chunks = 256 / (cols * outer_stride);
         if (chunks < 1) chunks = 1;
         if (chunks > 256) chunks = 256;
@@ -384,12 +329,12 @@ void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, in
             float *part = (float *)alloc_memory(bytes);
             if (part) {
                 dim3 g(cols, chunks, outer_stride);
-                k_sum_axis_partial<<<g, BLOCK_SIZE, 0, ember_stream()>>>(a, part, inner_stride,
-                                                                         axis_dim, chunks);
+                k_sum_axis_partial<<<g, EMBER_BLOCK, 0, ember_stream()>>>(a, part, inner_stride,
+                                                                          axis_dim, chunks);
                 CUDA_POST_LAUNCH();
                 dim3 g2(cols, outer_stride);
-                k_sum_axis_combine<<<g2, BLOCK_SIZE, 0, ember_stream()>>>(part, out, inner_stride,
-                                                                          chunks);
+                k_sum_axis_combine<<<g2, EMBER_BLOCK, 0, ember_stream()>>>(part, out, inner_stride,
+                                                                           chunks);
                 CUDA_POST_LAUNCH();
                 // Single-stream ordering means the buffer cannot be handed out
                 // again before both kernels have run.
@@ -398,8 +343,8 @@ void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, in
             }
         }
     }
-    k_sum_axis<<<grid(total), BLOCK_SIZE, 0, ember_stream()>>>(a, out, outer_stride, inner_stride,
-                                                               axis_dim);
+    k_sum_axis<<<ember_grid(total), EMBER_BLOCK, 0, ember_stream()>>>(a, out, outer_stride,
+                                                                      inner_stride, axis_dim);
     CUDA_POST_LAUNCH();
 }
 
@@ -422,8 +367,8 @@ __global__ void k_max_axis(const float *a, float *out, int outer_stride, int inn
 void max_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim)
 {
     int total = outer_stride * inner_stride;
-    k_max_axis<<<grid(total), BLOCK_SIZE, 0, ember_stream()>>>(a, out, outer_stride, inner_stride,
-                                                               axis_dim);
+    k_max_axis<<<ember_grid(total), EMBER_BLOCK, 0, ember_stream()>>>(a, out, outer_stride,
+                                                                      inner_stride, axis_dim);
     CUDA_POST_LAUNCH();
 }
 
@@ -443,7 +388,7 @@ __global__ void k_gelu_bwd(const float *grad, const float *x, float *out, int n)
 
 void gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
-    k_gelu_bwd<<<grid(n), BLOCK_SIZE, 0, ember_stream()>>>(grad, x, out, n);
+    k_gelu_bwd<<<ember_grid(n), EMBER_BLOCK, 0, ember_stream()>>>(grad, x, out, n);
     CUDA_POST_LAUNCH();
 }
 
@@ -465,8 +410,8 @@ __global__ void k_adam_step(float *p, const float *g, float *m, float *v, int si
 void adam_step(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
                float mb1, float beta2, float mb2, float eps, float bc1, float bc2)
 {
-    k_adam_step<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(p, g, m, v, size, lr, beta1, mb1,
-                                                               beta2, mb2, eps, bc1, bc2);
+    k_adam_step<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(
+        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2);
     CUDA_POST_LAUNCH();
 }
 
@@ -488,7 +433,7 @@ void adamw_step(float *p, const float *g, float *m, float *v, int size, float lr
                 float mb1, float beta2, float mb2, float eps, float bc1, float bc2,
                 float weight_decay)
 {
-    k_adamw_step<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(
+    k_adamw_step<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(
         p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay);
     CUDA_POST_LAUNCH();
 }
@@ -504,7 +449,7 @@ __global__ void k_sgd_step(float *p, const float *g, float *v, int size, float l
 
 void sgd_step(float *p, const float *g, float *v, int size, float lr, float momentum)
 {
-    k_sgd_step<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(p, g, v, size, lr, momentum);
+    k_sgd_step<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(p, g, v, size, lr, momentum);
     CUDA_POST_LAUNCH();
 }
 
@@ -534,9 +479,9 @@ void adam_step_group(float **ps, float **gs, float **ms, float **vs, const int *
                      int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
                      float eps, float bc1, float bc2)
 {
-    dim3 gdim(grid(max_size), nparams);
-    k_adam_step_group<<<gdim, BLOCK_SIZE, 0, ember_stream()>>>(ps, gs, ms, vs, sizes, lr, beta1,
-                                                               mb1, beta2, mb2, eps, bc1, bc2);
+    dim3 gdim(ember_grid(max_size), nparams);
+    k_adam_step_group<<<gdim, EMBER_BLOCK, 0, ember_stream()>>>(ps, gs, ms, vs, sizes, lr, beta1,
+                                                                mb1, beta2, mb2, eps, bc1, bc2);
     CUDA_POST_LAUNCH();
 }
 
@@ -566,8 +511,8 @@ void adamw_step_group(float **ps, float **gs, float **ms, float **vs, const int 
                       int max_size, float lr, float beta1, float mb1, float beta2, float mb2,
                       float eps, float bc1, float bc2, float weight_decay)
 {
-    dim3 gdim(grid(max_size), nparams);
-    k_adamw_step_group<<<gdim, BLOCK_SIZE, 0, ember_stream()>>>(
+    dim3 gdim(ember_grid(max_size), nparams);
+    k_adamw_step_group<<<gdim, EMBER_BLOCK, 0, ember_stream()>>>(
         ps, gs, ms, vs, sizes, lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay);
     CUDA_POST_LAUNCH();
 }
@@ -604,8 +549,8 @@ __global__ void k_adam_step_dev(float *p, const float *g, float *m, float *v, in
 void adam_step_dev(float *p, const float *g, float *m, float *v, int size, float lr, float beta1,
                    float mb1, float beta2, float mb2, float eps, const float *bc)
 {
-    k_adam_step_dev<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(p, g, m, v, size, lr, beta1, mb1,
-                                                                   beta2, mb2, eps, bc);
+    k_adam_step_dev<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(
+        p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc);
     CUDA_POST_LAUNCH();
 }
 
@@ -627,7 +572,7 @@ void adamw_step_dev(float *p, const float *g, float *m, float *v, int size, floa
                     float mb1, float beta2, float mb2, float eps, const float *bc,
                     float weight_decay)
 {
-    k_adamw_step_dev<<<grid(size), BLOCK_SIZE, 0, ember_stream()>>>(
+    k_adamw_step_dev<<<ember_grid(size), EMBER_BLOCK, 0, ember_stream()>>>(
         p, g, m, v, size, lr, beta1, mb1, beta2, mb2, eps, bc, weight_decay);
     CUDA_POST_LAUNCH();
 }

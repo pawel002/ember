@@ -38,8 +38,6 @@
 #define FA_TY 16
 #define FA_NT (FA_TX * FA_TY)
 
-#define FA_POST_LAUNCH() GPU_ERR_CHK(cudaGetLastError())
-
 // Reduce across the 16 lanes that share a `ty` (they are 16 consecutive lanes
 // of one warp), leaving the result in all of them.
 __device__ __forceinline__ float fa_row_max16(float v)
@@ -596,7 +594,7 @@ static void fa_fwd_launch(const float *q, const float *k, const float *v, float 
     dim3 grid((sq + BR - 1) / BR, batch);
     fn<<<grid, FA_NT, bytes, ember_stream()>>>(q, k, v, out, lse, sq, sk, scale, causal, nheads,
                                                sseq);
-    FA_POST_LAUNCH();
+    CUDA_POST_LAUNCH();
 }
 
 template <int DH>
@@ -615,7 +613,7 @@ static void fa_bwd_launch(const float *dout, const float *q, const float *k, con
         dim3 grid((sk + BC - 1) / BC, batch);
         fn<<<grid, FA_NT, bytes, ember_stream()>>>(dout, q, k, v, lse, rowdot, dk, dv, sq, sk,
                                                    scale, causal, nheads, sseq);
-        FA_POST_LAUNCH();
+        CUDA_POST_LAUNCH();
     }
     {
         size_t bytes =
@@ -625,7 +623,7 @@ static void fa_bwd_launch(const float *dout, const float *q, const float *k, con
         dim3 grid((sq + BR - 1) / BR, batch);
         fn<<<grid, FA_NT, bytes, ember_stream()>>>(dout, q, k, v, lse, rowdot, dq, sq, sk, scale,
                                                    causal, nheads, sseq);
-        FA_POST_LAUNCH();
+        CUDA_POST_LAUNCH();
     }
 }
 
@@ -666,7 +664,7 @@ void attention_bwd(const float *dout, const float *q, const float *k, const floa
     // 4 warps per block, one row each.
     k_flash_rowdot<<<(rows + 3) / 4, 128, 0, ember_stream()>>>(dout, out, rowdot, rows, dh, sq,
                                                                nheads, sseq);
-    FA_POST_LAUNCH();
+    CUDA_POST_LAUNCH();
 
     switch (dh) {
         case 16:

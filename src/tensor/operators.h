@@ -21,7 +21,6 @@ extern "C" {
 
 /* Non-element-wise operators (hand-written per backend). */
 void matmul(const float *a, const float *b, float *out, int n, int m, int k);
-void matmul_batched(const float *a, const float *b, float *out, int batch, int n, int m, int k);
 /* out = a @ b + bias, with bias broadcast over rows (length m). Fuses the
  * Linear epilogue: one GEMM + one cheap row-broadcast add, no broadcast temp. */
 void matmul_bias(const float *a, const float *b, const float *bias, float *out, int n, int m,

@@ -32,14 +32,18 @@ cudaStream_t g_stream = NULL;
 int g_tf32 = 0;
 }  // namespace
 
-// Bind a cuBLAS handle to the ember stream and to the currently selected matmul
-// precision. Both are pure handle-state writes (no device work), so calling
-// this before every GEMM is free and keeps the toggle live at runtime.
-void ember_cublas_prepare(cublasHandle_t handle)
+// One cuBLAS handle, created lazily and reused for the process lifetime.
+// Binding it to the ember stream and the current matmul precision is a pure
+// handle-state write (no device work), so doing it on every fetch is free and
+// keeps the TF32 toggle live at runtime.
+cublasHandle_t ember_cublas(void)
 {
+    static cublasHandle_t handle = NULL;
+    if (!handle) CUBLAS_ERR_CHK(cublasCreate(&handle));
     CUBLAS_ERR_CHK(cublasSetStream(handle, ember_stream()));
     CUBLAS_ERR_CHK(
         cublasSetMathMode(handle, g_tf32 ? CUBLAS_TF32_TENSOR_OP_MATH : CUBLAS_DEFAULT_MATH));
+    return handle;
 }
 
 // All ember GPU work runs on this dedicated stream (created lazily) so that the

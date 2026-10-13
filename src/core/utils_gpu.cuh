@@ -33,14 +33,69 @@ inline void cublasAssert(cublasStatus_t code, const char *file, int line)
 }
 #endif
 
+// Check for launch-configuration errors immediately after a kernel launch.
+// Asynchronous execution errors surface at the next device synchronization
+// (which happens on every host<->device transfer).
+#define CUDA_POST_LAUNCH() GPU_ERR_CHK(cudaGetLastError())
+
+// Threads per block for the 1-D element-wise kernels and the block-per-row
+// kernels. Must stay a power of two (block_reduce_* below rely on it).
+#define EMBER_BLOCK 256
+
+// Blocks needed to cover n elements with one thread each.
+static inline int ember_grid(int n)
+{
+    return (n + EMBER_BLOCK - 1) / EMBER_BLOCK;
+}
+
 // The single CUDA stream all ember GPU work runs on. Using a dedicated
 // (non-default) stream is what makes the training step capturable into a CUDA
 // graph. Defined in memory_gpu.cu.
 cudaStream_t ember_stream(void);
 
-// Bind `handle` to the ember stream and the selected matmul precision (see
-// set_matmul_tf32 in memory.h). Call before every cuBLAS GEMM. Defined in
-// memory_gpu.cu.
-void ember_cublas_prepare(cublasHandle_t handle);
+// The process-wide cuBLAS handle, already bound to the ember stream and to the
+// selected matmul precision (see set_matmul_tf32 in memory.h). Fetch it right
+// before each cuBLAS call so a precision toggle takes effect immediately.
+// Defined in memory_gpu.cu.
+cublasHandle_t ember_cublas(void);
+
+#ifdef __CUDACC__
+// Sum / max of `v` over the block, returned to every thread. `sh` is shared
+// scratch of blockDim.x floats; blockDim.x must be a power of two.
+static __device__ __forceinline__ float block_reduce_sum(float v, float *sh)
+{
+    int tid = threadIdx.x;
+    sh[tid] = v;
+    __syncthreads();
+    for (int s = blockDim.x >> 1; s > 0; s >>= 1) {
+        if (tid < s) sh[tid] += sh[tid + s];
+        __syncthreads();
+    }
+    float r = sh[0];
+    __syncthreads();
+    return r;
+}
+
+static __device__ __forceinline__ float block_reduce_max(float v, float *sh)
+{
+    int tid = threadIdx.x;
+    sh[tid] = v;
+    __syncthreads();
+    for (int s = blockDim.x >> 1; s > 0; s >>= 1) {
+        if (tid < s) sh[tid] = fmaxf(sh[tid], sh[tid + s]);
+        __syncthreads();
+    }
+    float r = sh[0];
+    __syncthreads();
+    return r;
+}
+
+// Sum of `v` over the warp, left in lane 0.
+static __device__ __forceinline__ float warp_reduce_sum(float v)
+{
+    for (int off = warpSize / 2; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
+    return v;
+}
+#endif
 
 #endif
