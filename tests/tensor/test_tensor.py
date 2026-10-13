@@ -272,4 +272,13 @@ class TestTensorExhaustive:
         expected_np = np_a.reshape(target)
         self._assert_eq(t_res, expected_np)
 
-        assert t_res is t_a
+        # a new tensor sharing the buffer; the original keeps its shape
+        assert t_res is not t_a and t_res._core is t_a._core
+        assert t_a.shape == start
+
+    def test_reshape_shares_the_buffer(self):
+        t = Tensor.from_np(np.zeros((2, 3), dtype=np.float32))
+        flat = t.reshape([6])  # any sequence works; the shape is stored as a tuple
+        assert flat.shape == (6,)
+        flat += 1.0
+        np.testing.assert_array_equal(t.to_np(), np.ones((2, 3)))

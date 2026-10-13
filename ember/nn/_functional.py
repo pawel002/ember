@@ -1,18 +1,13 @@
 """Thin Tensor-level wrappers around the transformer backend bindings.
 
-These keep the layer code readable: shape-metadata views (no copy), the batched
-GEMM primitive, and the heads permutation, all returning ``Tensor`` objects.
+These keep the layer code readable: the batched GEMM primitive and the heads
+permutation, returning ``Tensor`` objects.
 """
 
 from __future__ import annotations
 
 from ember._core import _bmm, _permute_0213
 from ember.tensor import Tensor
-
-
-def view(t: Tensor, shape: tuple[int, ...]) -> Tensor:
-    """A reshaped view sharing ``t``'s device buffer (contiguous reshape only)."""
-    return Tensor._from_core(t._core, shape, t.dtype)
 
 
 def bmm(

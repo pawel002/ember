@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from typing import Any, Literal, Union, overload
 
 import numpy as np
@@ -251,7 +252,15 @@ class Tensor:
         """Nested Python lists of floats (a bare float for a 0-d tensor)."""
         return self.to_np().tolist()
 
-    def reshape(self, new_shape: tuple[int, ...]) -> Tensor:
+    def reshape(self, shape: Sequence[int]) -> Tensor:
+        """This tensor's data with a new shape. One dimension may be -1 (it is
+        inferred).
+
+        No data is copied: ember tensors are always contiguous, so the result
+        shares this tensor's buffer, and an in-place write through either one
+        is visible in both. This tensor itself is unchanged.
+        """
+        new_shape = tuple(shape)
         total_elements = math.prod(self.shape)
 
         if -1 in new_shape:
@@ -259,7 +268,7 @@ class Tensor:
                 raise ValueError("Only one dimension can be -1 (inferred)")
 
             known_prod = -1 * math.prod(new_shape)
-            if total_elements % known_prod != 0:
+            if known_prod == 0 or total_elements % known_prod != 0:
                 raise ValueError(
                     f"Cannot reshape size {total_elements} into {new_shape}"
                 )
@@ -270,8 +279,7 @@ class Tensor:
         elif math.prod(new_shape) != total_elements:
             raise ValueError(f"Cannot reshape size {total_elements} into {new_shape}")
 
-        self.shape = new_shape
-        return self
+        return Tensor._from_core(self._core, new_shape, self.dtype)
 
     def __repr__(self):
         return f"Tensor({self.to_list()})"

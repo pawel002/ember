@@ -10,7 +10,7 @@ from ember._core import (
 )
 from ember.tensor import Tensor
 
-from ._functional import bmm, permute_0213, view
+from ._functional import bmm, permute_0213
 from .base import Layer
 from .layers import Linear
 
@@ -76,15 +76,15 @@ class MultiHeadAttention(Layer):
 
     def _to_heads(self, t: Tensor, B: int, S: int) -> Tensor:
         # (B*S, E) -> (B, S, H, dh) -> (B, H, S, dh) == (B*H, S, dh)
-        h = view(t, (B, S, self.num_heads, self.head_dim))
+        h = t.reshape((B, S, self.num_heads, self.head_dim))
         h = permute_0213(h, B, S, self.num_heads, self.head_dim)
-        return view(h, (B * self.num_heads, S, self.head_dim))
+        return h.reshape((B * self.num_heads, S, self.head_dim))
 
     def _from_heads(self, t: Tensor, B: int, S: int) -> Tensor:
         # (B*H, S, dh) -> (B, H, S, dh) -> (B, S, H, dh) -> (B*S, E)
-        h = view(t, (B, self.num_heads, S, self.head_dim))
+        h = t.reshape((B, self.num_heads, S, self.head_dim))
         h = permute_0213(h, B, self.num_heads, S, self.head_dim)
-        return view(h, (B * S, self.embed_dim))
+        return h.reshape((B * S, self.embed_dim))
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
         self.x = x
@@ -93,7 +93,7 @@ class MultiHeadAttention(Layer):
         BH = B * H
         self._shape = (B, S, E)
 
-        x2 = view(x, (B * S, E))
+        x2 = x.reshape((B * S, E))
         q = self.wq(x2, training)
         k = self.wk(x2, training)
         v = self.wv(x2, training)
@@ -112,7 +112,7 @@ class MultiHeadAttention(Layer):
             self._o = Tensor._from_core(o_core, (B * S, E), x.dtype)
             self._lse = Tensor._from_core(lse_core, (BH, S), x.dtype)
             out2 = self.wo(self._o, training)  # (B*S, E)
-            self.y = view(out2, (B, S, E))
+            self.y = out2.reshape((B, S, E))
             return self.y
 
         qh = self._to_heads(q, B, S)
@@ -136,7 +136,7 @@ class MultiHeadAttention(Layer):
         self._qh, self._kh, self._vh = qh, kh, vh
 
         out2 = self.wo(self._from_heads(o, B, S), training)  # (B*S, E)
-        self.y = view(out2, (B, S, E))
+        self.y = out2.reshape((B, S, E))
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
@@ -145,7 +145,7 @@ class MultiHeadAttention(Layer):
         H, dh = self.num_heads, self.head_dim
         BH = B * H
 
-        g2 = view(grad_y, (B * S, E))
+        g2 = grad_y.reshape((B * S, E))
         do2 = self.wo.backward(g2)  # dL/d(concat heads), (B*S, E)
 
         if self.fused:
@@ -172,7 +172,7 @@ class MultiHeadAttention(Layer):
             dxq = self.wq.backward(Tensor._from_core(dq_c, (B * S, E), dtype))
             dxk = self.wk.backward(Tensor._from_core(dk_c, (B * S, E), dtype))
             dxv = self.wv.backward(Tensor._from_core(dv_c, (B * S, E), dtype))
-            return view(dxq + dxk + dxv, (B, S, E))
+            return (dxq + dxk + dxv).reshape((B, S, E))
 
         do = self._to_heads(do2, B, S)  # (B*H, S, dh)
 
@@ -192,4 +192,4 @@ class MultiHeadAttention(Layer):
         dxk = self.wk.backward(self._from_heads(dk, B, S))
         dxv = self.wv.backward(self._from_heads(dv, B, S))
 
-        return view(dxq + dxk + dxv, (B, S, E))
+        return (dxq + dxk + dxv).reshape((B, S, E))

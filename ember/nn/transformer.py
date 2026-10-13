@@ -4,7 +4,6 @@ import numpy as np
 
 from ember.tensor import Tensor
 
-from ._functional import view
 from .activations import GELU, ReLU
 from .attention import MultiHeadAttention
 from .base import Layer
@@ -51,21 +50,21 @@ class FeedForward(Layer):
         self.x = x
         self._shape = x.shape
         n = math.prod(x.shape[:-1])
-        h = view(x, (n, self.dim))
+        h = x.reshape((n, self.dim))
         h = self.fc1(h, training)
         h = self.act(h, training)
         h = self.fc2(h, training)
-        self.y = view(h, x.shape)
+        self.y = h.reshape(x.shape)
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
         assert self._shape is not None, "forward() must run before backward()"
         n = math.prod(self._shape[:-1])
-        g = view(grad_y, (n, self.dim))
+        g = grad_y.reshape((n, self.dim))
         g = self.fc2.backward(g)
         g = self.act.backward(g)
         g = self.fc1.backward(g)
-        return view(g, self._shape)
+        return g.reshape(self._shape)
 
 
 class PositionalEncoding(Layer):

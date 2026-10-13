@@ -51,13 +51,13 @@ class TinyGPT:
         h = self.embed(idx)  # (B, S, dim)
         h = self.pos(h)  # + positional encoding
         h = self.encoder(h, training=True)  # (B, S, dim)
-        h2 = Tensor._from_core(h._core, (self.batch * self.seq_len, self.dim), h.dtype)
+        h2 = h.reshape((self.batch * self.seq_len, self.dim))
         logits = self.head(h2, training=True)  # (B*S, vocab)
         return logits
 
     def backward(self, grad_logits: Tensor) -> None:
         g = self.head.backward(grad_logits)  # (B*S, dim)
-        g = Tensor._from_core(g._core, (self.batch, self.seq_len, self.dim), g.dtype)
+        g = g.reshape((self.batch, self.seq_len, self.dim))
         g = self.encoder.backward(g)
         g = self.pos.backward(g)
         self.embed.backward(g)  # populates embedding grad

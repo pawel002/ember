@@ -38,11 +38,14 @@ Converts the tensor back to a NumPy array.
 #### `to_list() -> list`
 Converts the tensor data to a (possibly nested) Python list.
 
-#### `reshape(new_shape: tuple[int, ...]) -> Tensor`
-Reshapes the tensor **in place** and returns it (the same object).
+#### `reshape(shape: Sequence[int]) -> Tensor`
+Returns the tensor's data with a new shape. The original tensor keeps its shape.
+
+No data is copied: tensors are always contiguous, so the result shares the
+original's buffer, and an in-place write through either one is visible in both.
 
 - **Arguments:**
-  - `new_shape`: The new shape. One dimension can be -1, which will be inferred.
+  - `shape`: The new shape. One dimension can be -1, which will be inferred.
 
 ### Operators
 

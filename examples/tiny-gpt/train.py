@@ -122,12 +122,12 @@ class GPT:
         h = self.embed(idx)  # (B, S, dim)
         h = self.pos(h)
         h = self.blocks(h, training=training)
-        h2 = Tensor._from_core(h._core, (self.batch * self.seq_len, self.dim), h.dtype)
+        h2 = h.reshape((self.batch * self.seq_len, self.dim))
         return self.head(h2, training=training)  # (B*S, vocab)
 
     def backward(self, grad_logits: Tensor) -> None:
         g = self.head.backward(grad_logits)
-        g = Tensor._from_core(g._core, (self.batch, self.seq_len, self.dim), g.dtype)
+        g = g.reshape((self.batch, self.seq_len, self.dim))
         g = self.blocks.backward(g)
         g = self.pos.backward(g)
         self.embed.backward(g)
