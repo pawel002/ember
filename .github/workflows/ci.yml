@@ -22,12 +22,34 @@ on:
       - "figures/**"
 
 jobs:
+  # Formatting and linting for Python, C/CUDA and CMake, from the same hook
+  # versions as local pre-commit, plus mypy against the real NumPy stubs.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: pre-commit (ruff, mypy, clang-format, cmake-format, ...)
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
+      - name: Type check (mypy, with NumPy installed)
+        run: uv run --no-project --with mypy==1.19.1 --with numpy mypy --ignore-missing-imports ember
+
+  # Build the CPU backend and run the full test suite on every supported
+  # Python. GPU-only tests are skipped here.
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
+    env:
+      CMAKE_ARGS: -DEMBER_CUDA=OFF
     steps:
       - uses: actions/checkout@v4
 
@@ -36,20 +58,33 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
+      - name: Build and install (CPU backend)
         run: uv sync --group dev
-
-      - name: Build extension (CPU backend)
-        run: uv pip install -e .
-
-      - name: Lint (ruff)
-        run: uvx ruff@0.14.11 check .
-
-      - name: Format check (ruff)
-        run: uvx ruff@0.14.11 format --check .
-
-      - name: Type check (mypy)
-        run: uv run --with mypy==1.19.1 mypy --ignore-missing-imports ember
 
       - name: Test (pytest)
         run: uv run pytest -q
+
+  # Compile the CUDA backend. Hosted runners have no GPU, so this checks that
+  # every .cu file builds and the module imports; the GPU tests run locally.
+  cuda-build:
+    runs-on: ubuntu-latest
+    container: nvidia/cuda:12.4.1-devel-ubuntu22.04
+    env:
+      # No GPU to detect "native" from: build for an explicit architecture.
+      CMAKE_ARGS: -DCMAKE_CUDA_ARCHITECTURES=89
+    steps:
+      - name: Install build tools
+        run: apt-get update && apt-get install -y --no-install-recommends build-essential ca-certificates curl git
+
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build and install (CUDA backend)
+        run: uv sync --group dev
+
+      - name: Import the CUDA build
+        run: uv run python -c "import ember; assert ember.cuda.is_available()"

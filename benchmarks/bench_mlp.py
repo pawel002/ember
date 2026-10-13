@@ -71,12 +71,13 @@ def bench_ember(cfg: Config, x_np, y_np, opt_name="adam", use_graph=False) -> fl
     import ember.optim as optim
 
     em.random.seed(0)
-    layers = []
+    layers: list[nn.Layer] = []
     for i, (a, b) in enumerate(_hidden_sizes(cfg)):
         layers.append(nn.Linear(a, b))
         if i < cfg.depth - 1:
             layers.append(nn.ReLU())
     model = nn.Sequential(*layers)
+    opt: optim.base.Optimizer
     if opt_name == "sgd":
         opt = optim.SGD(model.parameters(), lr=1e-3, momentum=0.9)
     else:

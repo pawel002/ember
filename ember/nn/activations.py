@@ -22,7 +22,7 @@ class _FromOutput(Activation):
     _fwd: TensorUnaryOp  # y = f(x)
     _bwd: TensorBinaryOp  # dx = f'(grad, y)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.y: Tensor | None = None
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
@@ -55,7 +55,7 @@ class GELU(Activation):
     """GELU, ``0.5 * x * (1 + tanh(0.8 * x))``. Its derivative needs the input,
     so this one caches ``x`` instead of ``y``."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.x: Tensor | None = None
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
