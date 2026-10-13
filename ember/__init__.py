@@ -10,9 +10,11 @@ from .tensor import (
     ctg,
     ctgh,
     exp,
+    full,
     log,
     max,
     min,
+    ones,
     sin,
     sinh,
     softmax,
@@ -20,6 +22,7 @@ from .tensor import (
     sum,
     tan,
     tanh,
+    zeros,
 )
 
 __all__ = [
@@ -41,6 +44,9 @@ __all__ = [
     "sum",
     "softmax",
     "sqrt",
+    "full",
+    "zeros",
+    "ones",
     # checkpoints
     "save",
     "load",

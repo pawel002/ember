@@ -75,3 +75,13 @@ def test_freed_random_tensors_release_their_memory(make):
         assert em.cuda.memory_allocated() == before + 1024 * 4
         del t
     assert em.cuda.memory_allocated() == before
+
+
+def test_constant_fills():
+    np.testing.assert_array_equal(em.zeros((2, 3)).to_np(), np.zeros((2, 3)))
+    np.testing.assert_array_equal(em.ones([4]).to_np(), np.ones(4))
+    np.testing.assert_array_equal(em.full((2, 2), 3).to_np(), np.full((2, 2), 3.0))
+    assert em.full([2], 1.5).shape == (2,)
+    # the old ember.random names stay as aliases
+    np.testing.assert_array_equal(em.random.constant(2.5, (3,)).to_np(), [2.5] * 3)
+    np.testing.assert_array_equal(em.random.zeros((2,)).to_np(), [0.0, 0.0])

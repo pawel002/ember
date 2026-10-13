@@ -15,7 +15,7 @@ class Linear(Layer):
 
         scale = 1.0 / math.sqrt(in_features)
         self.weight = em.random.uniform(-scale, scale, size=(in_features, out_features))
-        self.bias = em.random.zeros(size=(out_features,))
+        self.bias = em.zeros((out_features,))
 
         self.grad_weight: Tensor | None = None
         self.grad_bias: Tensor | None = None

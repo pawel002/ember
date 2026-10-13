@@ -49,8 +49,8 @@ class Adam(Optimizer):
         self.capturable = capturable
         self.foreach = foreach
 
-        self.means = [em.random.zeros(p.shape) for p in self.parameters]
-        self.variances = [em.random.zeros(p.shape) for p in self.parameters]
+        self.means = [em.zeros(p.shape) for p in self.parameters]
+        self.variances = [em.zeros(p.shape) for p in self.parameters]
 
         # cached _core lists for the grouped path (params/state are fixed)
         self._p_cores = [p._core for p in self.parameters]
@@ -59,8 +59,8 @@ class Adam(Optimizer):
 
         if capturable:
             # device-resident step counter (t) and bias corrections [bc1, bc2]
-            self._t = em.random.zeros((1,))
-            self._bc = em.random.zeros((2,))
+            self._t = em.zeros((1,))
+            self._bc = em.zeros((2,))
 
     def _state_tensors(self) -> dict[str, list[Tensor]]:
         return {"means": self.means, "variances": self.variances}

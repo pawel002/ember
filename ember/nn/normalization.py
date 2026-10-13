@@ -25,8 +25,8 @@ class LayerNorm(Layer):
         self.dim = dim
         self.eps = eps
 
-        self.gamma = em.random.ones((dim,))
-        self.beta = em.random.zeros((dim,))
+        self.gamma = em.ones((dim,))
+        self.beta = em.zeros((dim,))
         self.grad_gamma: Tensor | None = None
         self.grad_beta: Tensor | None = None
 

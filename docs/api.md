@@ -135,7 +135,7 @@ $$c_i = f(a_i, b_i)$$
 
 ## Random Module (`ember.random`)
 
-Utilities for generating tensors with random or constant values.
+Random tensors.
 
 #### `ember.random.seed(value)`
 Seeds the random number generator so that `uniform` (and any layer that uses it,
@@ -153,19 +153,16 @@ Draws samples from a uniform distribution.
   - `size` (tuple[int]): Shape of the output tensor.
 - **Equation:** $x_i \sim U(\text{low}, \text{high})$
 
-#### `ember.random.constant(value, size)`
-Return a new tensor of given shape and type, filled with `value`.
+`ember.random.constant(value, size)`, `ember.random.zeros(size)` and
+`ember.random.ones(size)` are kept as aliases of the creation functions below.
 
-- **Arguments:**
-  - `value` (float): Fill value.
-  - `size` (tuple[int]): Shape of the output tensor.
-- **Equation:** $x_i = \text{value}$
+## Creation
 
-#### `ember.random.zeros(size)`
-Returns a new tensor of given shape, filled with zeros.
+#### `ember.full(shape, fill_value)`
+A new tensor of the given shape with every element set to `fill_value`.
 
-#### `ember.random.ones(size)`
-Returns a new tensor of given shape, filled with ones.
+#### `ember.zeros(shape)` / `ember.ones(shape)`
+A new tensor of the given shape filled with zeros / ones.
 
 ---
 

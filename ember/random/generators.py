@@ -1,4 +1,5 @@
-from ember._core import _constant, _seed, _uniform
+from ember._core import _seed, _uniform
+from ember.tensor import creation
 from ember.tensor.tensor import Tensor
 
 
@@ -11,16 +12,20 @@ def uniform(low: float, high: float, size: tuple[int, ...]) -> Tensor:
     return Tensor._from_core(_uniform(low, high, size), size, "float32")
 
 
+# Constant fills, kept here for compatibility; prefer ember.full/zeros/ones.
 def constant(value: float, size: tuple[int, ...]) -> Tensor:
-    return Tensor._from_core(_constant(value, size), size, "float32")
+    """Same as ``ember.full(size, value)``."""
+    return creation.full(size, value)
 
 
 def zeros(size: tuple[int, ...]) -> Tensor:
-    return Tensor._from_core(_constant(0.0, size), size, "float32")
+    """Same as ``ember.zeros(size)``."""
+    return creation.zeros(size)
 
 
 def ones(size: tuple[int, ...]) -> Tensor:
-    return Tensor._from_core(_constant(1.0, size), size, "float32")
+    """Same as ``ember.ones(size)``."""
+    return creation.ones(size)
 
 
 __all__ = ["seed", "uniform", "zeros", "constant", "ones"]

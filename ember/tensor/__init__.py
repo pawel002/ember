@@ -1,3 +1,4 @@
+from .creation import full, ones, zeros
 from .tensor import (
     T,
     Tensor,
@@ -38,4 +39,7 @@ __all__ = [
     "sum",
     "softmax",
     "sqrt",
+    "full",
+    "zeros",
+    "ones",
 ]

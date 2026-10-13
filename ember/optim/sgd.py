@@ -21,7 +21,7 @@ class SGD(Optimizer):
         self.parameters = parameters
         self.lr = lr
         self.momentum = momentum
-        self.velocities = [em.random.zeros(p.shape) for p in self.parameters]
+        self.velocities = [em.zeros(p.shape) for p in self.parameters]
 
     def _state_tensors(self) -> dict[str, list[Tensor]]:
         return {"velocities": self.velocities}
