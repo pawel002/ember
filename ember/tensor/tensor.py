@@ -85,12 +85,14 @@ class Tensor:
     _core: _Tensor
 
     def __init__(self, data: Any):
-        # NumPy arrays go through the zero-copy buffer path.
+        # NumPy arrays are uploaded straight from their buffer, which the
+        # backend reads as C-contiguous float32 (converted here if needed, so
+        # any layout -- a transpose, a slice -- is accepted).
         if isinstance(data, np.ndarray):
             self.shape = tuple(data.shape)
             self.strides = calculate_contiguous_strides(self.shape)
             self.dtype = "float32"  # backend is float32-only for now
-            self._core = _from_numpy(data.astype(np.float32))
+            self._core = _from_numpy(np.ascontiguousarray(data, dtype=np.float32))
             return
 
         # The backend is float32-only; integer inputs are accepted but stored
@@ -115,15 +117,8 @@ class Tensor:
 
     @classmethod
     def from_np(cls, array: NDArray) -> Tensor:
-        obj = cls.__new__(cls)
-
-        # for now force casted to f32
-        obj._core = _from_numpy(array.astype(np.float32))
-        obj.shape = tuple(array.shape)
-        obj.strides = calculate_contiguous_strides(obj.shape)
-        obj.dtype = "float32"
-
-        return obj
+        """Same as ``Tensor(array)``."""
+        return cls(np.asarray(array))
 
     def __add__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(

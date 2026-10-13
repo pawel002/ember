@@ -151,6 +151,19 @@ class TestTensorExhaustive:
         assert t.shape == shape
         np.testing.assert_allclose(t.to_np(), np_a, rtol=1e-6)
 
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda: np.arange(12, dtype=np.float64).reshape(3, 4).T,  # Fortran order
+            lambda: np.arange(24, dtype=np.float32).reshape(4, 6)[:, ::2],  # strided
+        ],
+    )
+    def test_construct_from_non_contiguous_array(self, make):
+        a = make()
+        for t in (Tensor(a), Tensor.from_np(a)):
+            assert t.shape == a.shape
+            np.testing.assert_array_equal(t.to_np(), a)
+
     def test_construct_from_list(self):
         t = Tensor([[1.0, 2.0], [3.0, 4.0]])
         assert t.shape == (2, 2)
