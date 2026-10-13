@@ -289,10 +289,8 @@ A stack of `TransformerEncoderLayer` blocks with an optional final `LayerNorm`.
 ```python
 import ember.nn as nn
 
-encoder = nn.TransformerEncoder(
-    num_layers=4, embed_dim=128, num_heads=8, causal=True
-)
-y = encoder(x, training=True)      # x: (batch, seq, 128)
+encoder = nn.TransformerEncoder(num_layers=4, embed_dim=128, num_heads=8, causal=True)
+y = encoder(x, training=True)  # x: (batch, seq, 128)
 dx = encoder.backward(grad_y)
 ```
 
@@ -410,7 +408,7 @@ import ember.loss as loss
 
 criterion = loss.CrossEntropyLoss()
 value = criterion(logits, one_hot_targets)  # scalar float
-grad = criterion.backward()                 # Tensor, dL/dlogits
+grad = criterion.backward()  # Tensor, dL/dlogits
 ```
 
 ---

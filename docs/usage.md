@@ -17,7 +17,7 @@ a = Tensor([1, 2, 3])
 
 # From NumPy
 np_arr = np.array([1.0, 2.0, 3.0], dtype=np.float32)
-b = Tensor(np_arr) # Automatically converts from buffer
+b = Tensor(np_arr)  # Automatically converts from buffer
 ```
 
 ## Operations
@@ -55,9 +55,9 @@ from ember import Tensor
 a = Tensor([[1.0, 2.0], [3.0, 4.0]])  # (2, 2)
 b = Tensor([[5.0, 6.0], [7.0, 8.0]])  # (2, 2)
 
-c = a @ b            # matrix product
-d = em.T(a)          # transpose
-s = em.sum(a)        # sum of all elements -> float
+c = a @ b  # matrix product
+d = em.T(a)  # transpose
+s = em.sum(a)  # sum of all elements -> float
 row_sums = em.sum(a, axis=1)  # sum along an axis -> Tensor
 ```
 

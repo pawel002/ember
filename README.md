@@ -42,8 +42,8 @@ b = Tensor([4.0, 5.0, 6.0])
 
 # Perform operations
 c = a * b
-print(c.to_list()) # Output: [4.0, 10.0, 18.0]
-print(c.to_np())   # Output: np.array([4.0, 10.0, 18.0])
+print(c.to_list())  # Output: [4.0, 10.0, 18.0]
+print(c.to_np())  # Output: np.array([4.0, 10.0, 18.0])
 ```
 
 Ember also ships small `nn` and `optim` modules:
@@ -56,8 +56,8 @@ import ember.optim as optim
 model = nn.Sequential(nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 1))
 opt = optim.Adam(model.parameters(), lr=1e-2)
 
-y = model(x, training=True)   # x is a Tensor of shape (batch, 4)
-model.backward(grad)          # your loss gradient w.r.t. y
+y = model(x, training=True)  # x is a Tensor of shape (batch, 4)
+model.backward(grad)  # your loss gradient w.r.t. y
 opt.apply(model.gradients())
 ```
 

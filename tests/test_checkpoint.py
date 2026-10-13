@@ -9,9 +9,9 @@ from ember import Tensor
 
 def _mlp():
     return nn.Sequential(
-        nn.Linear(4, 8), 
-        nn.ReLU(), 
-        nn.LayerNorm(8), 
+        nn.Linear(4, 8),
+        nn.ReLU(),
+        nn.LayerNorm(8),
         nn.Linear(8, 3),
     )
 

@@ -101,15 +101,17 @@ model = nn.Sequential(nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 1))
 opt = optim.SGD(model.parameters(), lr=1e-2, momentum=0.9)
 criterion = loss.MSELoss()
 
+
 def step():
-    pred = model(x, training=True)             # x, target are fixed buffers
+    pred = model(x, training=True)  # x, target are fixed buffers
     model.backward(criterion.gradient(pred, target))
     opt.apply(model.gradients())
 
-graph = em.cuda.capture(step)   # warms up, then records one step
+
+graph = em.cuda.capture(step)  # warms up, then records one step
 for _ in range(n_steps):
-    graph.replay()              # near-zero overhead
-em.cuda.sync()                  # block for results
+    graph.replay()  # near-zero overhead
+em.cuda.sync()  # block for results
 ```
 
 **Requirements / caveats:**

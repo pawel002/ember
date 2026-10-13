@@ -67,13 +67,13 @@ class MyDataset(data.Dataset):
 ```python
 data.DataLoader(
     dataset,
-    batch_size=1,      # samples per batch
-    shuffle=False,     # reshuffle every epoch
-    sampler=None,      # custom index sampler (mutually exclusive with shuffle)
+    batch_size=1,  # samples per batch
+    shuffle=False,  # reshuffle every epoch
+    sampler=None,  # custom index sampler (mutually exclusive with shuffle)
     batch_sampler=None,  # custom batch sampler (mutually exclusive with the above + drop_last)
-    drop_last=False,   # drop the final incomplete batch
-    collate_fn=None,   # custom batch assembly
-    seed=None,         # reproducible shuffling (requires shuffle=True)
+    drop_last=False,  # drop the final incomplete batch
+    collate_fn=None,  # custom batch assembly
+    seed=None,  # reproducible shuffling (requires shuffle=True)
 )
 ```
 
@@ -100,9 +100,15 @@ sampler only needs `__iter__` (yielding indices) and `__len__`:
 
 ```python
 class ReversedSampler(data.Sampler):
-    def __init__(self, n): self.n = n
-    def __iter__(self): return iter(range(self.n - 1, -1, -1))
-    def __len__(self): return self.n
+    def __init__(self, n):
+        self.n = n
+
+    def __iter__(self):
+        return iter(range(self.n - 1, -1, -1))
+
+    def __len__(self):
+        return self.n
+
 
 loader = data.DataLoader(ds, batch_size=8, sampler=ReversedSampler(len(ds)))
 ```
