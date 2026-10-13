@@ -1,6 +1,12 @@
-#include <Python.h>
+/* Small host-side helpers for the binding files. */
+#ifndef EMBER_TENSOR_HELPERS_H
+#define EMBER_TENSOR_HELPERS_H
 
-static PyObject *build_nested_list(float *data, long *dims, int ndim, int current_dim, int *offset)
+#include <Python.h>
+#include <stdlib.h>
+
+static inline PyObject *build_nested_list(float *data, long *dims, int ndim, int current_dim,
+                                          int *offset)
 {
     long size = dims[current_dim];
     PyObject *list = PyList_New(size);
@@ -32,7 +38,7 @@ static PyObject *build_nested_list(float *data, long *dims, int ndim, int curren
     return list;
 }
 
-static int tuple_to_array(PyObject *tuple, int **array_out, int *size_out)
+static inline int tuple_to_array(PyObject *tuple, int **array_out, int *size_out)
 {
     int size = (int)PyTuple_GET_SIZE(tuple);
     int *array = (int *)malloc(size * sizeof(int));
@@ -47,3 +53,5 @@ static int tuple_to_array(PyObject *tuple, int **array_out, int *size_out)
     *size_out = (int)size;
     return 0;
 }
+
+#endif

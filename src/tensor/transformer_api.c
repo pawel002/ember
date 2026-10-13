@@ -1,7 +1,13 @@
 /* Python bindings for the transformer building blocks declared in
- * transformer.h. Textually included into tensor_api.c (after alloc_result and
- * _TensorType are defined) so these ops join the _tensor module and share its
- * CUDA stream + caching allocator. Not compiled on its own. */
+ * transformer.h. Part of the _tensor module (see tensor_module.h). */
+
+#include <Python.h>
+
+#include "../core/memory.h"
+#include "operators.h"
+#include "tensor_helpers.h"
+#include "tensor_module.h"
+#include "transformer.h"
 
 /* ---- fused softmax over an axis ---- */
 static PyObject *_softmax_fwd(PyObject *module, PyObject *args)
@@ -283,9 +289,11 @@ static PyObject *_attention_bwd(PyObject *module, PyObject *args)
     return Py_BuildValue("(NNN)", (PyObject *)dq, (PyObject *)dk, (PyObject *)dv);
 }
 
-#define EMBER_TRANSFORMER_METHODS                                                              \
-    OP_METHOD(_softmax_fwd), OP_METHOD(_softmax_bwd), OP_METHOD(_softmax_rows),                \
-        OP_METHOD(_softmax_rows_causal), OP_METHOD(_layernorm_fwd), OP_METHOD(_layernorm_bwd), \
-        OP_METHOD(_permute_0213), OP_METHOD(_bmm), OP_METHOD(_embedding_fwd),                  \
-        OP_METHOD(_embedding_bwd), OP_METHOD(_attention_supported), OP_METHOD(_attention_fwd), \
-        OP_METHOD(_attention_bwd),
+PyMethodDef transformer_methods[] = {
+    OP_METHOD(_softmax_fwd),         OP_METHOD(_softmax_bwd),
+    OP_METHOD(_softmax_rows),        OP_METHOD(_softmax_rows_causal),
+    OP_METHOD(_layernorm_fwd),       OP_METHOD(_layernorm_bwd),
+    OP_METHOD(_permute_0213),        OP_METHOD(_bmm),
+    OP_METHOD(_embedding_fwd),       OP_METHOD(_embedding_bwd),
+    OP_METHOD(_attention_supported), OP_METHOD(_attention_fwd),
+    OP_METHOD(_attention_bwd),       {NULL}};

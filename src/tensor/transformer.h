@@ -6,11 +6,12 @@ extern "C" {
 #endif
 
 /* Building blocks for transformer / attention models. Like matmul & the axis
- * reductions these are hand-written per backend (CPU in transformer_cpu.c, CUDA
- * in transformer_gpu.cu) and bound into the _tensor module (transformer_api.inc
- * -> tensor_api.c). They deliberately live in the _tensor module so they share
- * its single CUDA stream and caching allocator (a separate module would fork
- * both, breaking op ordering and CUDA-graph capture). */
+ * reductions these are hand-written per backend (CPU in transformer_cpu.c and
+ * flash_cpu.c, CUDA in transformer_gpu.cu and flash_gpu.cu) and bound into the
+ * _tensor module by transformer_api.c. They deliberately live in the _tensor
+ * module so they share its single CUDA stream and caching allocator (a separate
+ * extension module links its own copy of both, breaking op ordering and
+ * CUDA-graph capture). */
 
 /* ---- fused softmax ----
  * softmax over one axis, described the same way as sum_axis/max_axis:

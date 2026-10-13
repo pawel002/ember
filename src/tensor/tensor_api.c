@@ -3,12 +3,9 @@
 #include <structmember.h>
 
 #include "../core/memory.h"
-#include "../core/tensor_types.h"
 #include "operators.h"
 #include "tensor_helpers.h"
-#include "transformer.h"
-
-#define OP_METHOD(NAME) {#NAME, (PyCFunction)NAME, METH_VARARGS, "Element-wise " #NAME " operation"}
+#include "tensor_module.h"
 
 typedef void (*binary_tensor_op_func)(const float *, const float *, float *, int);
 typedef void (*binary_scalar_op_func)(const float *, float, float *, int);
@@ -18,10 +15,8 @@ typedef void (*binary_tensor_broadcasted_op_func)(const float *, const float *, 
 typedef void (*inplace_tensor_op_func)(float *, const float *, int);
 typedef void (*inplace_scalar_op_func)(float *, float, int);
 
-static PyTypeObject _TensorType;
-
 /* ---- allocation helper: a result _Tensor with `size` device floats ---- */
-static _Tensor *alloc_result(int size)
+_Tensor *alloc_result(int size)
 {
     _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
     if (!result) return NULL;
@@ -860,12 +855,6 @@ static PyObject *_graph_destroy(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
-/* Transformer building-block bindings (softmax / layernorm / attention / heads
- * permute / batched GEMM / embedding). Included here so they share this
- * module's CUDA stream + caching allocator; uses alloc_result and _TensorType
- * defined above. */
-#include "transformer_api.inc"
-
 /* ---- type & module definitions ---- */
 static PyMethodDef _Tensor_instance_methods[] = {
     {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
@@ -907,9 +896,6 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_adam_step_dev),
     OP_METHOD(_adamw_step_dev),
 
-    /* transformer building blocks */
-    EMBER_TRANSFORMER_METHODS
-
     // device / CUDA-graph control
     {"_sync", (PyCFunction)_sync, METH_VARARGS, "Synchronize the device"},
     {"_empty_cache", (PyCFunction)_empty_cache, METH_VARARGS, "Release the cached device pool"},
@@ -924,7 +910,7 @@ static PyMethodDef module_methods[] = {
 
     {NULL}};
 
-static PyTypeObject _TensorType = {
+PyTypeObject _TensorType = {
     PyVarObject_HEAD_INIT(NULL, 0).tp_name = "ember._core._tensor._Tensor",
     .tp_basicsize = sizeof(_Tensor),
     .tp_flags = Py_TPFLAGS_DEFAULT,
@@ -951,6 +937,12 @@ PyMODINIT_FUNC PyInit__tensor(void)
     Py_INCREF(&_TensorType);
     if (PyModule_AddObject(m, "_Tensor", (PyObject *)&_TensorType) < 0) {
         Py_DECREF(&_TensorType);
+        Py_DECREF(m);
+        return NULL;
+    }
+
+    /* softmax / layernorm / attention / heads permute / batched GEMM / embedding */
+    if (PyModule_AddFunctions(m, transformer_methods) < 0) {
         Py_DECREF(m);
         return NULL;
     }
