@@ -36,6 +36,11 @@ void copy_from_device(void *dst_host, const void *src_device, size_t bytes)
     if (bytes) memcpy(dst_host, src_device, bytes);
 }
 
+void copy_device_to_device(void *dst_device, const void *src_device, size_t bytes)
+{
+    if (bytes) memcpy(dst_device, src_device, bytes);
+}
+
 void copy_to_device_pinned(void *dst_device, const void *src_host, size_t bytes)
 {
     if (bytes) memcpy(dst_device, src_host, bytes);

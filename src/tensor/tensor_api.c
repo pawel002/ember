@@ -319,6 +319,17 @@ static PyObject *impl_inplace_scalar_op(PyObject *args, inplace_scalar_op_func o
     }
 #include "operators.def"
 
+/* Copy src into dst's existing buffer (same size), in stream order. */
+static PyObject *_copy(PyObject *module, PyObject *args)
+{
+    _Tensor *dst, *src;
+    if (!PyArg_ParseTuple(args, "O!O!", &_TensorType, &dst, &_TensorType, &src)) return NULL;
+    if (require_size(src, dst->size, "source") < 0) return NULL;
+
+    copy_device_to_device(dst->d_ptr, src->d_ptr, (size_t)dst->size * sizeof(float));
+    Py_RETURN_NONE;
+}
+
 /* ---- non-element-wise operators ---- */
 static PyObject *_matmul(PyObject *module, PyObject *args)
 {
@@ -779,6 +790,7 @@ static PyMethodDef module_methods[] = {
 #include "operators.def"
 
     /* non-element-wise operators */
+    OP_METHOD(_copy),
     OP_METHOD(_matmul),
     OP_METHOD(_matmul_bias),
     OP_METHOD(_matmul_batched),

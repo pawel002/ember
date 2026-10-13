@@ -15,6 +15,8 @@ void empty_device_cache(void);
 size_t device_memory_in_use(void);
 void copy_to_device(void *dst_device, const void *src_host, size_t bytes);
 void copy_from_device(void *dst_host, const void *src_device, size_t bytes);
+/* Device->device copy, queued on the ember stream (capturable). */
+void copy_device_to_device(void *dst_device, const void *src_device, size_t bytes);
 /* Copy host->device via a reusable pinned staging buffer with an async copy on
  * the ember stream (faster H2D, and lets fresh batches be fed into a stable
  * device buffer between graph replays). CPU backend: a plain memcpy. */

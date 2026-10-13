@@ -131,6 +131,13 @@ void copy_from_device(void *dst_host, const void *src_device, size_t bytes)
     GPU_ERR_CHK(cudaMemcpy(dst_host, src_device, bytes, cudaMemcpyDeviceToHost));
 }
 
+void copy_device_to_device(void *dst_device, const void *src_device, size_t bytes)
+{
+    if (bytes == 0) return;
+    GPU_ERR_CHK(
+        cudaMemcpyAsync(dst_device, src_device, bytes, cudaMemcpyDeviceToDevice, ember_stream()));
+}
+
 // Shared, lazily-grown pinned staging buffer for host->device uploads.
 static void *g_pinned = NULL;
 static size_t g_pinned_bytes = 0;

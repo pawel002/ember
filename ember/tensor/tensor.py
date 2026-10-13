@@ -15,6 +15,7 @@ from ember._core import (
     _add_broadcasted,
     _add_scalar,
     _add_tensor,
+    _copy,
     _cos,
     _cosh,
     _ctg,
@@ -195,16 +196,11 @@ class Tensor:
     def __neg__(self):
         return Tensor._from_core(_negate(self._core), self.shape, self.dtype)
 
-    # In-place operators mutate this tensor's device buffer directly (no
-    # allocation) when shapes match, so the buffer address stays stable across
-    # iterations -- optimizers rely on this, and it is required for CUDA-graph
-    # capture. The broadcasting case falls back to allocate-and-adopt.
-    def _adopt(self, other: Tensor) -> Tensor:
-        self._core = other._core
-        self.shape = other.shape
-        self.dtype = other.dtype
-        return self
-
+    # In-place operators always write into this tensor's existing buffer, so its
+    # address stays stable across iterations -- optimizers rely on this, and it
+    # is required for CUDA-graph capture. Matching shapes run one in-place
+    # kernel; a broadcast operand is combined out of place and copied back. As
+    # in NumPy, the result must keep this tensor's shape.
     def _inplace(self, other, scalar_ip, tensor_ip, oop) -> Tensor:
         if isinstance(other, (int, float)):
             scalar_ip(self._core, float(other))
@@ -213,7 +209,14 @@ class Tensor:
             if self.shape == other.shape:
                 tensor_ip(self._core, other._core)
                 return self
-            return self._adopt(oop(other))  # broadcasting: cannot do in place
+            result = oop(other)
+            if result.shape != self.shape:
+                raise ValueError(
+                    f"in-place operation would change the shape {self.shape} "
+                    f"to {result.shape}"
+                )
+            _copy(self._core, result._core)
+            return self
         raise TypeError(
             f"unsupported operand type for in-place op: '{type(other).__name__}'"
         )
