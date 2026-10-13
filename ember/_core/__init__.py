@@ -94,7 +94,6 @@ from ._tensor import (
     _uniform,
 )
 from ._types import (
-    Scalar,
     TensorBinaryOp,
     TensorBroadcastedOp,
     TensorScalarOp,
@@ -108,7 +107,6 @@ __all__ = [
     "TensorScalarOp",
     "TensorUnaryOp",
     "TensorBroadcastedOp",
-    "Scalar",
     # tensor methods
     "_add_tensor",
     "_sub_tensor",

@@ -100,7 +100,9 @@ class Tensor:
         self._core = _from_numpy(np.ascontiguousarray(data, dtype=np.float32))
 
     @classmethod
-    def _from_core(cls, core: _Tensor, shape: tuple[int, ...], dtype: Types) -> Tensor:
+    def _from_core(
+        cls, core: _Tensor, shape: tuple[int, ...], dtype: Types = "float32"
+    ) -> Tensor:
         obj = cls.__new__(cls)
 
         obj._core = core
@@ -127,8 +129,8 @@ class Tensor:
             self, other, "-", _sub_tensor, _sub_scalar, _sub_broadcasted
         )
 
-    def __rsub__(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "-", _sub_tensor, _rsub_scalar)
+    def __rsub__(self, other: float) -> Tensor:
+        return _reflected_scalar_op(self, other, _rsub_scalar)
 
     def __mul__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(
@@ -143,8 +145,8 @@ class Tensor:
             self, other, "/", _truediv_tensor, _truediv_scalar, _truediv_broadcasted
         )
 
-    def __rtruediv__(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "/", _truediv_tensor, _rtruediv_scalar)
+    def __rtruediv__(self, other: float) -> Tensor:
+        return _reflected_scalar_op(self, other, _rtruediv_scalar)
 
     def __gt__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, ">", _gt_tensor, _gt_scalar)
@@ -155,8 +157,8 @@ class Tensor:
     def __pow__(self, other: BinaryOpType) -> Tensor:
         return _binary_op_wrapper(self, other, "**", _pow_tensor, _pow_scalar)
 
-    def __rpow__(self, other: BinaryOpType) -> Tensor:
-        return _binary_op_wrapper(self, other, "**", _pow_tensor, _rpow_scalar)
+    def __rpow__(self, other: float) -> Tensor:
+        return _reflected_scalar_op(self, other, _rpow_scalar)
 
     def __matmul__(self, other: Tensor) -> Tensor:
         if not isinstance(other, Tensor):
@@ -319,18 +321,23 @@ def _binary_op_wrapper(
     )
 
 
+def _reflected_scalar_op(a: Tensor, b: float, scalar_op: TensorScalarOp) -> Tensor:
+    """``b <op> a`` for a Python number ``b``. Python only calls a reflected
+    method (``__rsub__`` ...) when the left operand is not a Tensor."""
+    if isinstance(b, (int, float)):
+        return Tensor._from_core(scalar_op(a._core, float(b)), a.shape, a.dtype)
+    return NotImplemented
+
+
 def _unary_op_wrapper(a: Tensor, op_symbol: str, tensor_op: TensorUnaryOp) -> Tensor:
     assert_tensor_unary(a, op_symbol)
     return Tensor._from_core(tensor_op(a._core), a.shape, a.dtype)
 
 
 # standalone binary methods
-TensorLike = BinaryOpType
-
-
-def _comutative_tensor_like_wrapper(
-    a: TensorLike,
-    b: TensorLike,
+def _commutative_wrapper(
+    a: BinaryOpType,
+    b: BinaryOpType,
     op_symbol: str,
     tensor_op: TensorBinaryOp,
     float_op: TensorScalarOp,
@@ -345,12 +352,12 @@ def _comutative_tensor_like_wrapper(
     )
 
 
-def max(a: TensorLike, b: TensorLike) -> Tensor:
-    return _comutative_tensor_like_wrapper(a, b, "max()", _max_tensor, _max_scalar)
+def max(a: BinaryOpType, b: BinaryOpType) -> Tensor:
+    return _commutative_wrapper(a, b, "max()", _max_tensor, _max_scalar)
 
 
-def min(a: TensorLike, b: TensorLike) -> Tensor:
-    return _comutative_tensor_like_wrapper(a, b, "min()", _min_tensor, _min_scalar)
+def min(a: BinaryOpType, b: BinaryOpType) -> Tensor:
+    return _commutative_wrapper(a, b, "min()", _min_tensor, _min_scalar)
 
 
 # standalone unary methods
