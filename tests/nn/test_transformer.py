@@ -39,19 +39,26 @@ class TestFeedForward:
         num = numeric_grad_input(lambda xt: ff(xt), x, c)
         np.testing.assert_allclose(dx, num, rtol=3e-2, atol=3e-2)
 
+    def test_unknown_activation_raises(self):
+        with pytest.raises(ValueError, match="unknown activation"):
+            nn.FeedForward(8, activation="tanh")
+        with pytest.raises(ValueError, match="unknown activation"):
+            nn.TransformerEncoderLayer(8, 2, activation="GELU")
+
 
 class TestPositionalEncoding:
-    def test_forward_matches_sinusoid(self):
-        dim, seq = 8, 5
+    @pytest.mark.parametrize("dim", [8, 7])
+    def test_forward_matches_sinusoid(self, dim):
+        seq = 5
         pe = nn.PositionalEncoding(dim, max_len=16)
         x = np.zeros((2, seq, dim), dtype=np.float32)
         y = pe(Tensor.from_np(x)).to_np()
 
         ref = np.zeros((seq, dim), dtype=np.float32)
-        pos = np.arange(seq)[:, None]
-        div = np.exp(np.arange(0, dim, 2) * (-math.log(10000.0) / dim))
-        ref[:, 0::2] = np.sin(pos * div)
-        ref[:, 1::2] = np.cos(pos * div)
+        for p in range(seq):
+            for i in range(dim):
+                angle = p / 10000.0 ** (2 * (i // 2) / dim)
+                ref[p, i] = math.sin(angle) if i % 2 == 0 else math.cos(angle)
         np.testing.assert_allclose(y[0], ref, rtol=1e-4, atol=1e-5)
         np.testing.assert_allclose(y[1], ref, rtol=1e-4, atol=1e-5)
 

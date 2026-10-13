@@ -11,6 +11,8 @@ from .base import Layer
 from .layers import Linear
 from .normalization import LayerNorm
 
+_ACTIVATIONS: dict[str, type[Layer]] = {"gelu": GELU, "relu": ReLU}
+
 
 class FeedForward(Layer):
     """Position-wise feed-forward network: Linear -> activation -> Linear.
@@ -21,6 +23,11 @@ class FeedForward(Layer):
     """
 
     def __init__(self, dim: int, hidden: int | None = None, activation: str = "gelu"):
+        if activation not in _ACTIVATIONS:
+            raise ValueError(
+                f"unknown activation {activation!r}; expected one of "
+                f"{sorted(_ACTIVATIONS)}"
+            )
         self.dim = dim
         self.hidden = hidden if hidden is not None else 4 * dim
         self.activation = activation
@@ -31,7 +38,7 @@ class FeedForward(Layer):
         self.y = None
         self._shape: tuple[int, ...] | None = None
         self.fc1 = Linear(self.dim, self.hidden)
-        self.act: Layer = GELU() if self.activation == "gelu" else ReLU()
+        self.act: Layer = _ACTIVATIONS[self.activation]()
         self.fc2 = Linear(self.hidden, self.dim)
 
     def parameters(self) -> list[Tensor]:
@@ -74,7 +81,7 @@ class PositionalEncoding(Layer):
             np.arange(0, dim, 2, dtype=np.float32) * (-math.log(10000.0) / dim)
         )
         pe[:, 0::2] = np.sin(pos * div)
-        pe[:, 1::2] = np.cos(pos * div)
+        pe[:, 1::2] = np.cos(pos * div[: dim // 2])  # one column fewer if dim is odd
         self._pe_np = pe
         self.reset()
 
