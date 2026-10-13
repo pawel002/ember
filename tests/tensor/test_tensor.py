@@ -169,6 +169,23 @@ class TestTensorExhaustive:
         assert t.shape == (2, 2)
         assert t.to_list() == [[1.0, 2.0], [3.0, 4.0]]
 
+    @pytest.mark.parametrize(
+        "data, error",
+        [
+            ([[1.0, 2.0], [3.0]], ValueError),  # ragged
+            ([True, False], TypeError),  # bool is ambiguous
+            ([1.0, "x"], TypeError),
+        ],
+    )
+    def test_construct_rejects_bad_lists(self, data, error):
+        with pytest.raises(error):
+            Tensor(data)
+
+    def test_scalar_tensor(self):
+        t = Tensor(3.0)
+        assert t.shape == ()
+        assert t.to_list() == 3.0
+
     def test_dtype_is_always_float32(self):
         # Backend is float32-only; dtype must reflect what is actually stored.
         assert Tensor([1, 2, 3]).dtype == "float32"  # int list

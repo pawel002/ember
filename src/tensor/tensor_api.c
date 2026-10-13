@@ -68,87 +68,6 @@ static int _Tensor_init(_Tensor *self, PyObject *args, PyObject *kwds)
     return tensor_alloc(self, size);
 }
 
-static PyObject *_Tensor_copy_from_list(_Tensor *self, PyObject *args)
-{
-    PyObject *py_list;
-    if (!PyArg_ParseTuple(args, "O!", &PyList_Type, &py_list)) return NULL;
-
-    if (PyList_GET_SIZE(py_list) != self->size) {
-        PyErr_Format(PyExc_ValueError, "list has %zd elements, tensor has %d",
-                     PyList_GET_SIZE(py_list), self->size);
-        return NULL;
-    }
-
-    float *temp_host = (float *)malloc((size_t)self->size * sizeof(float) + 1);
-    if (!temp_host) return PyErr_NoMemory();
-
-    for (int i = 0; i < self->size; i++) {
-        double v = PyFloat_AsDouble(PyList_GET_ITEM(py_list, i));
-        if (v == -1.0 && PyErr_Occurred()) {
-            free(temp_host);
-            return NULL;
-        }
-        temp_host[i] = (float)v;
-    }
-
-    copy_to_device(self->d_ptr, temp_host, (size_t)self->size * sizeof(float));
-    free(temp_host);
-
-    Py_RETURN_NONE;
-}
-
-static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
-{
-    PyObject *shape_tuple;
-
-    if (!PyArg_ParseTuple(args, "O!", &PyTuple_Type, &shape_tuple)) {
-        return NULL;
-    }
-
-    Py_ssize_t ndim = PyTuple_Size(shape_tuple);
-    long *c_dims = (long *)malloc(ndim * sizeof(long));
-    if (!c_dims) return PyErr_NoMemory();
-    long total_elements = 1;
-
-    for (Py_ssize_t i = 0; i < ndim; i++) {
-        PyObject *item = PyTuple_GetItem(shape_tuple, i);
-        long dim = PyLong_AsLong(item);
-
-        if (dim < 0) {
-            free(c_dims);
-            PyErr_SetString(PyExc_ValueError, "Dimensions cannot be negative");
-            return NULL;
-        }
-
-        c_dims[i] = dim;
-        total_elements *= dim;
-    }
-
-    if (total_elements != self->size) {
-        free(c_dims);
-        PyErr_Format(PyExc_ValueError,
-                     "Shape mismatch: Tensor has %d elements, but requested shape requires %ld",
-                     self->size, total_elements);
-        return NULL;
-    }
-
-    float *temp_host = (float *)malloc((size_t)self->size * sizeof(float) + 1);
-    if (!temp_host) {
-        free(c_dims);
-        return PyErr_NoMemory();
-    }
-
-    copy_from_device(temp_host, self->d_ptr, (size_t)self->size * sizeof(float));
-
-    int offset = 0;
-    PyObject *result = build_nested_list(temp_host, c_dims, (int)ndim, 0, &offset);
-
-    free(temp_host);
-    free(c_dims);
-
-    return result;
-}
-
 static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
 {
     npy_intp dims[1];
@@ -841,10 +760,8 @@ static PyObject *_graph_destroy(PyObject *module, PyObject *args)
 
 /* ---- type & module definitions ---- */
 static PyMethodDef _Tensor_instance_methods[] = {
-    {"_copy_from_list", (PyCFunction)_Tensor_copy_from_list, METH_VARARGS, "Load data from list"},
     {"_copy_from_numpy", (PyCFunction)_Tensor_copy_from_numpy, METH_VARARGS,
      "Update the device buffer in place from a float32 numpy array"},
-    {"_to_list", (PyCFunction)_Tensor_to_list, METH_VARARGS, "Export data to list"},
     {"_to_np", (PyCFunction)_Tensor_to_np, METH_VARARGS, "Copy to np array"},
     {NULL}};
 

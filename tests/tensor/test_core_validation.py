@@ -80,14 +80,6 @@ def test_embedding_rejects_float_indices():
         _core._embedding_fwd(_t(7, 4), np.zeros(3, np.float32), 4)
 
 
-def test_copy_from_list_length_and_types():
-    t = em.random.zeros((3,))
-    with pytest.raises(ValueError, match="3"):
-        t._core._copy_from_list([1.0, 2.0])
-    with pytest.raises(TypeError):
-        t._core._copy_from_list([1.0, "x", 3.0])
-
-
 class TestEmptyTensors:
     def test_roundtrip(self):
         t = Tensor(np.zeros((0, 3), np.float32))

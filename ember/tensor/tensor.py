@@ -69,11 +69,7 @@ from ember._core import (
     _truediv_tensor,
 )
 
-from .tensor_utils import (
-    calculate_broadcast,
-    calculate_contiguous_strides,
-    extract_data_info,
-)
+from .tensor_utils import calculate_broadcast
 
 Types = Literal["float32"]
 BinaryOpType = Union["Tensor", float, int]
@@ -85,24 +81,21 @@ class Tensor:
     _core: _Tensor
 
     def __init__(self, data: Any):
-        # NumPy arrays are uploaded straight from their buffer, which the
-        # backend reads as C-contiguous float32 (converted here if needed, so
-        # any layout -- a transpose, a slice -- is accepted).
-        if isinstance(data, np.ndarray):
-            self.shape = tuple(data.shape)
-            self.strides = calculate_contiguous_strides(self.shape)
-            self.dtype = "float32"  # backend is float32-only for now
-            self._core = _from_numpy(np.ascontiguousarray(data, dtype=np.float32))
-            return
+        # Lists and scalars go through NumPy too, which validates them (ragged
+        # nesting raises ValueError). Booleans are rejected as ambiguous.
+        if not isinstance(data, np.ndarray):
+            array = np.asarray(data)
+            if array.dtype.kind not in "iuf":
+                raise TypeError(f"Unsupported data type: {array.dtype}")
+            data = array
 
-        # The backend is float32-only; integer inputs are accepted but stored
+        # The backend is float32-only: integer inputs are accepted but stored
         # (and reported) as float32 so `dtype` never misrepresents the data.
-        shape, _dtype_cls, flat_data = extract_data_info(data)
-        self.shape = shape
-        self.strides = calculate_contiguous_strides(self.shape)
+        # It reads a C-contiguous buffer, so any layout (a transpose, a slice)
+        # is converted here.
+        self.shape = tuple(data.shape)
         self.dtype = "float32"
-        self._core = _Tensor(math.prod(shape))
-        self._core._copy_from_list(flat_data)
+        self._core = _from_numpy(np.ascontiguousarray(data, dtype=np.float32))
 
     @classmethod
     def _from_core(cls, core: _Tensor, shape: tuple[int, ...], dtype: Types) -> Tensor:
@@ -110,7 +103,6 @@ class Tensor:
 
         obj._core = core
         obj.shape = shape
-        obj.strides = calculate_contiguous_strides(obj.shape)
         obj.dtype = dtype
 
         return obj
@@ -210,7 +202,6 @@ class Tensor:
     def _adopt(self, other: Tensor) -> Tensor:
         self._core = other._core
         self.shape = other.shape
-        self.strides = other.strides
         self.dtype = other.dtype
         return self
 
@@ -253,8 +244,9 @@ class Tensor:
         result = self._core._to_np()
         return result.reshape(self.shape)
 
-    def to_list(self) -> list[Any]:
-        return self._core._to_list(self.shape)
+    def to_list(self) -> Any:
+        """Nested Python lists of floats (a bare float for a 0-d tensor)."""
+        return self.to_np().tolist()
 
     def reshape(self, new_shape: tuple[int, ...]) -> Tensor:
         total_elements = math.prod(self.shape)
@@ -276,7 +268,6 @@ class Tensor:
             raise ValueError(f"Cannot reshape size {total_elements} into {new_shape}")
 
         self.shape = new_shape
-        self.strides = calculate_contiguous_strides(self.shape)
         return self
 
     def __repr__(self):
@@ -303,9 +294,7 @@ def _binary_op_wrapper(
             return Tensor._from_core(result_core, a.shape, a.dtype)
 
         if tensor_broadcast_op is not None:
-            out_shape, str_a, str_b = calculate_broadcast(
-                a.shape, a.strides, b.shape, b.strides
-            )
+            out_shape, str_a, str_b = calculate_broadcast(a.shape, b.shape)
             result_core = tensor_broadcast_op(a._core, b._core, out_shape, str_a, str_b)
             return Tensor._from_core(result_core, out_shape, a.dtype)
 
