@@ -119,7 +119,10 @@ em.cuda.sync()  # block for results
 - Fixed shapes; feed new data by copying into the same input buffers.
 - Use `Loss.gradient()` (no scalar read) in the captured step — a host sync
   cannot occur during capture.
-- SGD is exact under capture. Adam/AdamW freeze their bias-correction factor at
-  capture time; capture after enough warmup steps (when the correction is
-  ~1) or prefer SGD if you need it exact.
+- SGD is exact under capture. Build Adam/AdamW with `capturable=True` so the
+  step counter and bias corrections live on the device and advance on every
+  replay; otherwise their bias correction is frozen at its capture-time value.
+- In-place operators keep the tensor's buffer (a broadcast operand is combined
+  and copied back), so parameters and inputs stay at the addresses the graph
+  recorded. `Tensor.reshape` shares the buffer too.
 - On the CPU backend `ember.cuda` is a no-op.

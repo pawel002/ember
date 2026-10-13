@@ -7,18 +7,29 @@ element-wise tensor operator** — touches as few places as possible.
 
 ```
 ember/                     Python front-end
-  tensor/tensor.py         Tensor class + functional ops (sin, sum, ...)
-  nn/, optim/, random/     layers, optimizers, samplers
+  tensor/                  Tensor class, functional ops (sin, sum, ...), zeros/ones/full
+  nn/                      layers (Linear, LayerNorm, MultiHeadAttention, ...)
+  loss/, optim/            losses, optimizers
+  random/                  seeding and random tensors
+  data/                    Dataset, samplers, DataLoader
+  cuda/                    device control, CUDA-graph capture
+  checkpoint.py            save / load
   _core/                   compiled extension module (_tensor) + .pyi stubs
 
 src/                       C / CUDA back-end
-  core/                    memory + type definitions (CPU and GPU variants)
-  tensor/
+  core/                    memory, stream and cuBLAS handle (CPU and GPU variants)
+  tensor/                  everything below links into the one _tensor module
     operators.def          <-- single source of truth for element-wise ops
     operators.h            declarations   (generated from operators.def)
     operators_cpu.c        CPU kernels    (generated from operators.def)
     operators_gpu.cu       CUDA kernels   (generated from operators.def)
-    tensor_api.c           Python bindings (generated from operators.def)
+    transformer.h          softmax, LayerNorm, bmm, embedding, attention
+    transformer_*.c/.cu    their kernels; flash_*.c/.cu: fused attention
+    tensor_module.h        what the binding files share (_TensorType, alloc_result)
+    tensor_helpers.h       argument checks for the bindings
+    tensor_api.c           _Tensor type, module init, element-wise + core bindings
+    transformer_api.c      bindings for transformer.h
+    random_api.c           random / constant fills
 ```
 
 The CPU (`*_cpu.c`) and GPU (`*_gpu.cu`) files provide the same functions; CMake
@@ -53,7 +64,9 @@ To add, say, an `abs` unary operator:
        return _unary_op_wrapper(a, "abs()", _abs)
    ```
 
-   and re-export it from `ember/tensor/__init__.py` and `ember/__init__.py`.
+   importing `_abs` from `ember._core` (add it to the import list in
+   `ember/_core/__init__.py`), and re-export it from `ember/tensor/__init__.py`
+   and `ember/__init__.py`.
 
 3. **Add the type stub** in `ember/_core/_tensor.pyi`:
 
@@ -64,7 +77,7 @@ To add, say, an `abs` unary operator:
 4. **Add a test** in `tests/tensor/test_tensor.py` (the parametrized suite makes
    this a one-line addition to the `UNARY_OPS` list).
 
-Rebuild and test:
+Rebuild (C changes need a reinstall; Python changes are live) and test:
 
 ```bash
 uv pip install -e .
@@ -83,7 +96,15 @@ are pure Python built on `Tensor`, no C changes are required.
 
 ## Non-element-wise operators
 
-Operators that are not purely element-wise (`matmul`, `transpose`, `sum`,
-`sum_axis`) are written by hand in `operators_cpu.c` / `operators_gpu.cu` and
-declared in `operators.h`, then bound in `tensor_api.c`. Follow the existing
-functions as templates.
+Operators that are not purely element-wise are written by hand for each
+backend: the core ones (`matmul`, `transpose`, `sum`, `sum_axis`, the optimizer
+steps) in `operators_cpu.c` / `operators_gpu.cu`, declared in `operators.h`
+and bound in `tensor_api.c`; the transformer building blocks in
+`transformer_*` / `flash_*`, declared in `transformer.h` and bound in
+`transformer_api.c`. Follow the existing functions as templates.
+
+A binding receives shapes as plain ints from Python and the kernels trust
+them, so check every size it will index before launching (`require_size`,
+`checked_size` and `parse_axis` in `tensor_helpers.h`); skip the kernel when
+the result is empty. New device code belongs in the `_tensor` module: a second
+extension module would link its own copy of the allocator and stream.

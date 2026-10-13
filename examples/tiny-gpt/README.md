@@ -8,21 +8,18 @@ optimized with AdamW, batched with `ember.data.DataLoader`.
 ## Files
 
 - `train.py` — downloads the dataset (first run only), trains the model,
-  writes `losses.csv` and `sample.txt`.
+  and writes `losses.csv` (loss history) and `sample.txt` (text sampled from
+  the trained model, temperature 0.8, prompt `"\nKING:"`) next to itself.
 - `plot_loss.py` — plots `losses.csv` into `loss_curve.png`.
-- `loss_curve.png` — train/val loss curve of the reference run.
-- `sample.txt` — text sampled from the trained model (temperature 0.8,
-  prompt `"\nKING:"`).
+
+The generated files are not tracked (see `.gitignore`).
 
 ## Run
 
-```bash
-# CUDA build (12.4 toolchain); training defaults to the visible GPU
-export PATH=/usr/local/cuda-12.4/bin:$PATH
-export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH
-export CUDA_VISIBLE_DEVICES=7   # pick a GPU
+With the CUDA backend installed (see [Installation](../../docs/installation.md)):
 
-uv run python examples/tiny-gpt/train.py
+```bash
+CUDA_VISIBLE_DEVICES=0 uv run python examples/tiny-gpt/train.py  # pick a GPU
 uv run --with matplotlib python examples/tiny-gpt/plot_loss.py
 ```
 

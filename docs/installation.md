@@ -5,7 +5,7 @@ Ember requires Python 3.11 or later. You can install it from source.
 ## Prerequisites
 
 - **CMake** (>= 3.24; `uv`/`pip` fetch a recent one automatically)
-- **C Compiler** (GCC, Clang, or MSVC)
+- **C Compiler** (GCC or Clang; CI builds with GCC on Linux)
 - **CUDA Toolkit** (Optional, for GPU support)
 
 ## Installing from Source

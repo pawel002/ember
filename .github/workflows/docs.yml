@@ -6,11 +6,31 @@ on:
     paths:
       - "docs/**"
       - "mkdocs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
 permissions:
-  contents: write
+  contents: read
 jobs:
-  deploy:
+  # On pull requests: build only, failing on broken links or nav entries.
+  check:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Build (strict)
+        run: >-
+          uv run --no-project --with "mkdocs>=1.5.0" --with "mkdocs-material>=9.5.0"
+          --with "pymdown-extensions>=10.20" mkdocs build --strict
+
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # gh-deploy pushes to the gh-pages branch
     steps:
       - uses: actions/checkout@v4
       - name: Install uv

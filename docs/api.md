@@ -57,7 +57,7 @@ original's buffer, and an in-place write through either one is visible in both.
 | `-` | `__sub__` | Elementwise subtraction | $c_i = a_i - b_i$ |
 | `*` | `__mul__` | Elementwise multiplication | $c_i = a_i \cdot b_i$ |
 | `/` | `__truediv__` | Elementwise division | $c_i = \frac{a_i}{b_i}$ |
-| `@` | `__matmul__` | Matrix multiplication (2-D only) | $C_{ij} = \sum_k A_{ik} B_{kj}$ |
+| `@` | `__matmul__` | Matrix multiplication (2-D, or batched N-D with matching batch dims) | $C_{ij} = \sum_k A_{ik} B_{kj}$ |
 | `**` | `__pow__` | Elementwise power | $c_i = a_i^{b_i}$ |
 | `-` | `__neg__` | Elementwise negation | $b_i = -a_i$ |
 | `>` | `__gt__` | Elementwise greater than | $c_i = 1 \text{ if } a_i > b_i \text{ else } 0$ |
@@ -226,22 +226,22 @@ model = nn.Sequential(
 
 Activation functions applied elementwise.
 
-#### `ember.nn.activations.ReLU`
+#### `ember.nn.ReLU`
 Rectified Linear Unit.
 
 - **Equation:** $f(x) = \max(0, x)$
 
-#### `ember.nn.activations.Sigmoid`
+#### `ember.nn.Sigmoid`
 Sigmoid function.
 
 - **Equation:** $f(x) = \frac{1}{1 + e^{-x}}$
 
-#### `ember.nn.activations.Tanh`
+#### `ember.nn.Tanh`
 Hyperbolic Tangent function.
 
 - **Equation:** $f(x) = \tanh(x)$
 
-#### `ember.nn.activations.GELU`
+#### `ember.nn.GELU`
 Gaussian Error Linear Unit (using `tanh` approximation).
 
 - **Equation:** $f(x) \approx 0.5 x (1 + \tanh(0.8 x))$
@@ -397,9 +397,14 @@ ember.load("ckpt.npz", model)
 
 ## Losses (`ember.loss`)
 
-Losses implement `ember.loss.base.Loss`: `forward(pred, target) -> float`
-(also callable) caches state, and `backward() -> Tensor` returns the gradient
-of the loss with respect to `pred`.
+Losses implement `ember.loss.base.Loss`:
+
+- `forward(pred, target) -> float` (also callable) computes the scalar loss and
+  caches what `backward` needs; `backward() -> Tensor` then returns the
+  gradient of the loss with respect to `pred`.
+- `gradient(pred, target) -> Tensor` returns that gradient directly, without
+  reading the scalar loss back to the host. Use it in hot loops and in a step
+  captured with `ember.cuda.capture`, where a host read cannot happen.
 
 #### `ember.loss.MSELoss()`
 Mean squared error over all elements: `mean((pred - target) ** 2)`.

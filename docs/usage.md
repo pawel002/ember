@@ -46,7 +46,8 @@ th = em.tanh(a)
 
 ### Matrix Multiplication
 
-Use the `@` operator for 2-D matrix multiplication.
+Use the `@` operator for matrix multiplication: 2-D, or batched over matching
+leading dimensions (e.g. `(B, n, k) @ (B, k, m)`).
 
 ```python
 import ember as em
