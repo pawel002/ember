@@ -97,13 +97,6 @@ float sum(const float *a, int size)
     return s;
 }
 
-int sum_axis_product(const int *shape, int start, int end)
-{
-    int p = 1;
-    for (int i = start; i < end; i++) p *= shape[i];
-    return p;
-}
-
 void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim)
 {
     for (int o = 0; o < outer_stride; o++) {

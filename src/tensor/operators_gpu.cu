@@ -47,13 +47,12 @@
     }
 
 // Broadcast metadata is passed by value as a kernel parameter (no device
-// allocation, host->device copy or synchronization per call). MAX_BCAST_DIMS
+// allocation, host->device copy or synchronization per call). EMBER_MAX_BCAST_DIMS
 // bounds the rank; broadcasts are only used for low-rank tensors.
-#define MAX_BCAST_DIMS 8
 struct BcastMeta {
-    int shape[MAX_BCAST_DIMS];
-    int sa[MAX_BCAST_DIMS];
-    int sb[MAX_BCAST_DIMS];
+    int shape[EMBER_MAX_BCAST_DIMS];
+    int sa[EMBER_MAX_BCAST_DIMS];
+    int sb[EMBER_MAX_BCAST_DIMS];
     int ndim;
     int total;
 };
@@ -232,13 +231,6 @@ float sum(const float *a, int size)
     copy_from_device(&result, d_out, sizeof(float));
     free_memory(d_out);
     return result;
-}
-
-int sum_axis_product(const int *shape, int start, int end)
-{
-    int p = 1;
-    for (int i = start; i < end; i++) p *= shape[i];
-    return p;
 }
 
 __global__ void k_sum_axis(const float *a, float *out, int outer_stride, int inner_stride,

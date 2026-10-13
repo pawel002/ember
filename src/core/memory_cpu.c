@@ -6,7 +6,7 @@
 
 void *alloc_memory(size_t bytes)
 {
-    return malloc(bytes);
+    return bytes ? malloc(bytes) : NULL;  // same contract as the GPU allocator
 }
 
 void free_memory(void *ptr)
@@ -28,17 +28,17 @@ size_t device_memory_in_use(void)
 
 void copy_to_device(void *dst_device, const void *src_host, size_t bytes)
 {
-    memcpy(dst_device, src_host, bytes);
+    if (bytes) memcpy(dst_device, src_host, bytes);
 }
 
 void copy_from_device(void *dst_host, const void *src_device, size_t bytes)
 {
-    memcpy(dst_host, src_device, bytes);
+    if (bytes) memcpy(dst_host, src_device, bytes);
 }
 
 void copy_to_device_pinned(void *dst_device, const void *src_host, size_t bytes)
 {
-    memcpy(dst_device, src_host, bytes);
+    if (bytes) memcpy(dst_device, src_host, bytes);
 }
 
 void sync_device() {}

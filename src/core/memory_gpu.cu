@@ -119,6 +119,7 @@ void copy_to_device(void *dst_device, const void *src_host, size_t bytes)
 {
     // Synchronous copy: it completes before any subsequently-launched kernel on
     // the ember stream runs, so no explicit ordering is needed.
+    if (bytes == 0) return;  // empty tensors have no buffer
     GPU_ERR_CHK(cudaMemcpy(dst_device, src_host, bytes, cudaMemcpyHostToDevice));
 }
 
@@ -126,6 +127,7 @@ void copy_from_device(void *dst_host, const void *src_device, size_t bytes)
 {
     // Wait for pending kernels on the ember stream before reading back.
     GPU_ERR_CHK(cudaStreamSynchronize(ember_stream()));
+    if (bytes == 0) return;
     GPU_ERR_CHK(cudaMemcpy(dst_host, src_device, bytes, cudaMemcpyDeviceToHost));
 }
 
@@ -135,6 +137,8 @@ static size_t g_pinned_bytes = 0;
 
 void copy_to_device_pinned(void *dst_device, const void *src_host, size_t bytes)
 {
+    if (bytes == 0) return;
+
     // Ensure any prior async copy out of the shared staging buffer has finished
     // before we overwrite it on the host.
     GPU_ERR_CHK(cudaStreamSynchronize(ember_stream()));

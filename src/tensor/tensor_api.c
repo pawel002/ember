@@ -16,17 +16,35 @@ typedef void (*binary_tensor_broadcasted_op_func)(const float *, const float *, 
 typedef void (*inplace_tensor_op_func)(float *, const float *, int);
 typedef void (*inplace_scalar_op_func)(float *, float, int);
 
+/* Point `t` at a fresh buffer of `size` device floats. An empty tensor holds no
+ * buffer (d_ptr stays NULL) and every op skips the kernel for it. Returns 0, or
+ * -1 with a Python error set. */
+static int tensor_alloc(_Tensor *t, int size)
+{
+    if (size < 0) {
+        PyErr_SetString(PyExc_ValueError, "tensor size cannot be negative");
+        return -1;
+    }
+    t->size = size;
+    t->d_ptr = NULL;
+    if (size == 0) return 0;
+
+    t->d_ptr = alloc_memory((size_t)size * sizeof(float));
+    if (!t->d_ptr) {
+        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
+        return -1;
+    }
+    return 0;
+}
+
 /* ---- allocation helper: a result _Tensor with `size` device floats ---- */
 _Tensor *alloc_result(int size)
 {
     _Tensor *result = (_Tensor *)_TensorType.tp_alloc(&_TensorType, 0);
     if (!result) return NULL;
 
-    result->size = size;
-    result->d_ptr = alloc_memory((size_t)size * sizeof(float));
-    if (!result->d_ptr) {
+    if (tensor_alloc(result, size) < 0) {
         Py_DECREF(result);
-        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
         return NULL;
     }
     return result;
@@ -46,14 +64,8 @@ static int _Tensor_init(_Tensor *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
-    self->size = size;
-    self->d_ptr = alloc_memory((size_t)size * sizeof(float));
-
-    if (self->d_ptr == NULL) {
-        PyErr_SetString(PyExc_MemoryError, "Failed to allocate device memory");
-        return -1;
-    }
-    return 0;
+    if (self->d_ptr) free_memory(self->d_ptr);  // __init__ called again
+    return tensor_alloc(self, size);
 }
 
 static PyObject *_Tensor_copy_from_list(_Tensor *self, PyObject *args)
@@ -61,12 +73,22 @@ static PyObject *_Tensor_copy_from_list(_Tensor *self, PyObject *args)
     PyObject *py_list;
     if (!PyArg_ParseTuple(args, "O!", &PyList_Type, &py_list)) return NULL;
 
-    float *temp_host = (float *)malloc((size_t)self->size * sizeof(float));
+    if (PyList_GET_SIZE(py_list) != self->size) {
+        PyErr_Format(PyExc_ValueError, "list has %zd elements, tensor has %d",
+                     PyList_GET_SIZE(py_list), self->size);
+        return NULL;
+    }
+
+    float *temp_host = (float *)malloc((size_t)self->size * sizeof(float) + 1);
     if (!temp_host) return PyErr_NoMemory();
 
     for (int i = 0; i < self->size; i++) {
-        PyObject *item = PyList_GetItem(py_list, i);
-        temp_host[i] = (float)PyFloat_AsDouble(item);
+        double v = PyFloat_AsDouble(PyList_GET_ITEM(py_list, i));
+        if (v == -1.0 && PyErr_Occurred()) {
+            free(temp_host);
+            return NULL;
+        }
+        temp_host[i] = (float)v;
     }
 
     copy_to_device(self->d_ptr, temp_host, (size_t)self->size * sizeof(float));
@@ -110,13 +132,12 @@ static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
         return NULL;
     }
 
-    float *temp_host = (float *)malloc((size_t)self->size * sizeof(float));
+    float *temp_host = (float *)malloc((size_t)self->size * sizeof(float) + 1);
     if (!temp_host) {
         free(c_dims);
         return PyErr_NoMemory();
     }
 
-    sync_device();  // make sure the device is synchronized
     copy_from_device(temp_host, self->d_ptr, (size_t)self->size * sizeof(float));
 
     int offset = 0;
@@ -130,7 +151,6 @@ static PyObject *_Tensor_to_list(_Tensor *self, PyObject *args)
 
 static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
 {
-    import_array();
     npy_intp dims[1];
     dims[0] = self->size;
 
@@ -140,8 +160,6 @@ static PyObject *_Tensor_to_np(_Tensor *self, PyObject *args)
     }
 
     void *dst = PyArray_DATA((PyArrayObject *)arr);
-
-    sync_device();  // make sure the device is synchronized
     copy_from_device(dst, self->d_ptr, (size_t)self->size * sizeof(float));
 
     return arr;
@@ -167,10 +185,10 @@ static PyObject *_Tensor_copy_from_numpy(_Tensor *self, PyObject *args)
         return NULL;
     }
 
-    int n = (int)(view.len / view.itemsize);
+    Py_ssize_t n = view.len / view.itemsize;
     if (n != self->size) {
         PyBuffer_Release(&view);
-        PyErr_Format(PyExc_ValueError, "Size mismatch: array has %d elements, tensor has %d", n,
+        PyErr_Format(PyExc_ValueError, "Size mismatch: array has %zd elements, tensor has %d", n,
                      self->size);
         return NULL;
     }
@@ -204,8 +222,8 @@ static PyObject *_from_numpy(PyObject *module, PyObject *args)
         return NULL;
     }
 
-    int num_elements = (int)(view.len / view.itemsize);
-    _Tensor *result = alloc_result(num_elements);
+    int num_elements = checked_size(view.len / view.itemsize);
+    _Tensor *result = num_elements < 0 ? NULL : alloc_result(num_elements);
     if (!result) {
         PyBuffer_Release(&view);
         return NULL;
@@ -233,7 +251,7 @@ static PyObject *impl_tensor_binary_op(PyObject *module, PyObject *args, binary_
     _Tensor *result = alloc_result(a->size);
     if (!result) return NULL;
 
-    op(a->d_ptr, b->d_ptr, result->d_ptr, a->size);
+    if (a->size) op(a->d_ptr, b->d_ptr, result->d_ptr, a->size);
     return (PyObject *)result;
 }
 
@@ -249,7 +267,7 @@ static PyObject *impl_float_binary_op(PyObject *module, PyObject *args, binary_s
     _Tensor *result = alloc_result(a->size);
     if (!result) return NULL;
 
-    op(a->d_ptr, b, result->d_ptr, a->size);
+    if (a->size) op(a->d_ptr, b, result->d_ptr, a->size);
     return (PyObject *)result;
 }
 
@@ -275,16 +293,30 @@ static PyObject *impl_tensor_broadcasted_binary_op(PyObject *module, PyObject *a
         PyErr_SetString(PyExc_ValueError, "Dimension mismatch in broadcast arguments");
         goto cleanup;
     }
-
-    int total_elements = 1;
-    for (int i = 0; i < ndim; i++) {
-        total_elements *= c_shape[i];
+    if (ndim > EMBER_MAX_BCAST_DIMS) {
+        PyErr_Format(PyExc_ValueError, "broadcasting supports at most %d dimensions, got %d",
+                     EMBER_MAX_BCAST_DIMS, ndim);
+        goto cleanup;
     }
 
-    _Tensor *result = alloc_result(total_elements);
+    /* The furthest element each operand is read at must lie inside it. */
+    long long total = 1, last_a = 0, last_b = 0;
+    for (int i = 0; i < ndim; i++) {
+        total *= c_shape[i];
+        if (c_shape[i] == 0) continue;
+        last_a += (long long)(c_shape[i] - 1) * c_strides_a[i];
+        last_b += (long long)(c_shape[i] - 1) * c_strides_b[i];
+    }
+    if (checked_size(total) < 0) goto cleanup;
+    if (total > 0 && (last_a >= a->size || last_b >= b->size)) {
+        PyErr_SetString(PyExc_ValueError, "broadcast shape/strides exceed the operand sizes");
+        goto cleanup;
+    }
+
+    _Tensor *result = alloc_result((int)total);
     if (!result) goto cleanup;
 
-    op(a->d_ptr, b->d_ptr, result->d_ptr, c_shape, c_strides_a, c_strides_b, ndim);
+    if (total) op(a->d_ptr, b->d_ptr, result->d_ptr, c_shape, c_strides_a, c_strides_b, ndim);
 
     free(c_shape);
     free(c_strides_a);
@@ -306,7 +338,7 @@ static PyObject *impl_tensor_unary_op(PyObject *module, PyObject *args, unary_te
     _Tensor *result = alloc_result(a->size);
     if (!result) return NULL;
 
-    op(a->d_ptr, result->d_ptr, a->size);
+    if (a->size) op(a->d_ptr, result->d_ptr, a->size);
     return (PyObject *)result;
 }
 
@@ -321,7 +353,7 @@ static PyObject *impl_inplace_tensor_op(PyObject *args, inplace_tensor_op_func o
         return NULL;
     }
 
-    op(a->d_ptr, b->d_ptr, a->size);
+    if (a->size) op(a->d_ptr, b->d_ptr, a->size);
     Py_RETURN_NONE;
 }
 
@@ -331,7 +363,7 @@ static PyObject *impl_inplace_scalar_op(PyObject *args, inplace_scalar_op_func o
     float b;
     if (!PyArg_ParseTuple(args, "O!f", &_TensorType, &a, &b)) return NULL;
 
-    op(a->d_ptr, b, a->size);
+    if (a->size) op(a->d_ptr, b, a->size);
     Py_RETURN_NONE;
 }
 
@@ -373,24 +405,16 @@ static PyObject *_matmul(PyObject *module, PyObject *args)
 {
     _Tensor *a, *b;
     int n, m, k;
-
-    if (!PyArg_ParseTuple(args, "O!O!iii", &_TensorType, &a, &_TensorType, &b, &n, &m, &k)) {
+    if (!PyArg_ParseTuple(args, "O!O!iii", &_TensorType, &a, &_TensorType, &b, &n, &m, &k))
         return NULL;
-    }
 
-    if (a->size != n * k) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d", a->size, n, k);
+    if (require_size(a, (long long)n * k, "A") < 0 || require_size(b, (long long)k * m, "B") < 0)
         return NULL;
-    }
-    if (b->size != k * m) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch B: %d != %d x %d", b->size, k, m);
-        return NULL;
-    }
-
-    _Tensor *result = alloc_result(n * m);
+    int size = checked_size((long long)n * m);
+    _Tensor *result = size < 0 ? NULL : alloc_result(size);
     if (!result) return NULL;
 
-    matmul(a->d_ptr, b->d_ptr, result->d_ptr, n, m, k);
+    if (size) matmul(a->d_ptr, b->d_ptr, result->d_ptr, n, m, k);
     return (PyObject *)result;
 }
 
@@ -398,29 +422,18 @@ static PyObject *_matmul_bias(PyObject *module, PyObject *args)
 {
     _Tensor *a, *b, *bias;
     int n, m, k;
-
     if (!PyArg_ParseTuple(args, "O!O!O!iii", &_TensorType, &a, &_TensorType, &b, &_TensorType,
-                          &bias, &n, &m, &k)) {
+                          &bias, &n, &m, &k))
         return NULL;
-    }
 
-    if (a->size != n * k) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d", a->size, n, k);
+    if (require_size(a, (long long)n * k, "A") < 0 || require_size(b, (long long)k * m, "B") < 0 ||
+        require_size(bias, m, "bias") < 0)
         return NULL;
-    }
-    if (b->size != k * m) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch B: %d != %d x %d", b->size, k, m);
-        return NULL;
-    }
-    if (bias->size != m) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch bias: %d != %d", bias->size, m);
-        return NULL;
-    }
-
-    _Tensor *result = alloc_result(n * m);
+    int size = checked_size((long long)n * m);
+    _Tensor *result = size < 0 ? NULL : alloc_result(size);
     if (!result) return NULL;
 
-    matmul_bias(a->d_ptr, b->d_ptr, bias->d_ptr, result->d_ptr, n, m, k);
+    if (size) matmul_bias(a->d_ptr, b->d_ptr, bias->d_ptr, result->d_ptr, n, m, k);
     return (PyObject *)result;
 }
 
@@ -428,25 +441,21 @@ static PyObject *_matmul_batched(PyObject *module, PyObject *args)
 {
     _Tensor *a, *b;
     int batch, n, m, k;
-
     if (!PyArg_ParseTuple(args, "O!O!iiii", &_TensorType, &a, &_TensorType, &b, &batch, &n, &m, &k))
         return NULL;
 
-    if (a->size != batch * n * k) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch A: %d != %d x %d x %d", a->size, batch, n,
-                     k);
+    if (require_size(a, (long long)batch * n * k, "A") < 0 ||
+        require_size(b, (long long)batch * k * m, "B") < 0)
+        return NULL;
+    int size = checked_size((long long)batch * n * m);
+    if (size > 0 && k == 0) {
+        PyErr_SetString(PyExc_ValueError, "batched matmul needs a non-empty inner dimension");
         return NULL;
     }
-    if (b->size != batch * k * m) {
-        PyErr_Format(PyExc_ValueError, "Shape mismatch B: %d != %d x %d x %d", b->size, batch, k,
-                     m);
-        return NULL;
-    }
-
-    _Tensor *result = alloc_result(batch * n * m);
+    _Tensor *result = size < 0 ? NULL : alloc_result(size);
     if (!result) return NULL;
 
-    bmm(a->d_ptr, b->d_ptr, result->d_ptr, batch, n, m, k, 0, 0, 1.0f);
+    if (size) bmm(a->d_ptr, b->d_ptr, result->d_ptr, batch, n, m, k, 0, 0, 1.0f);
     return (PyObject *)result;
 }
 
@@ -455,11 +464,12 @@ static PyObject *_transpose(PyObject *module, PyObject *args)
     _Tensor *a;
     int n, m;
     if (!PyArg_ParseTuple(args, "O!ii", &_TensorType, &a, &n, &m)) return NULL;
+    if (require_size(a, (long long)n * m, "input") < 0) return NULL;
 
     _Tensor *result = alloc_result(a->size);
     if (!result) return NULL;
 
-    transpose(a->d_ptr, result->d_ptr, n, m);
+    if (a->size) transpose(a->d_ptr, result->d_ptr, n, m);
     return (PyObject *)result;
 }
 
@@ -468,45 +478,46 @@ static PyObject *_sum(PyObject *module, PyObject *args)
     _Tensor *a;
     if (!PyArg_ParseTuple(args, "O!", &_TensorType, &a)) return NULL;
 
-    float result = sum(a->d_ptr, a->size);
+    float result = a->size ? sum(a->d_ptr, a->size) : 0.0f;
     return PyFloat_FromDouble((double)result);
 }
 
 typedef void (*axis_reduce_func)(const float *, float *, int, int, int);
 
-static PyObject *impl_axis_reduce(PyObject *args, axis_reduce_func op)
+/* `empty_ok`: whether reducing over a zero-length axis has a value (0 for a
+ * sum; a max has none). */
+static PyObject *impl_axis_reduce(PyObject *args, axis_reduce_func op, int empty_ok)
 {
     _Tensor *a;
-    PyObject *a_shape_obj;
+    PyObject *shape;
     int axis;
-
-    if (!PyArg_ParseTuple(args, "O!O!i", &_TensorType, &a, &PyTuple_Type, &a_shape_obj, &axis))
+    if (!PyArg_ParseTuple(args, "O!O!i", &_TensorType, &a, &PyTuple_Type, &shape, &axis))
         return NULL;
 
-    int a_dim, *a_shape;
-    if (tuple_to_array(a_shape_obj, &a_shape, &a_dim) < 0) return NULL;
+    int outer, axis_dim, inner;
+    if (parse_axis(shape, axis, a->size, &outer, &axis_dim, &inner) < 0) return NULL;
 
-    int outer_stride = sum_axis_product(a_shape, 0, axis);
-    int axis_dim = a_shape[axis];
-    int inner_stride = sum_axis_product(a_shape, axis + 1, a_dim);
-
-    free(a_shape);
-
-    _Tensor *result = alloc_result(outer_stride * inner_stride);
+    int size = outer * inner;  // <= a->size unless axis_dim == 0
+    if (axis_dim == 0 && size > 0 && !empty_ok) {
+        PyErr_SetString(PyExc_ValueError, "cannot reduce over an empty axis");
+        return NULL;
+    }
+    if (checked_size((long long)outer * inner) < 0) return NULL;
+    _Tensor *result = alloc_result(size);
     if (!result) return NULL;
 
-    op(a->d_ptr, result->d_ptr, outer_stride, inner_stride, axis_dim);
+    if (size) op(a->d_ptr, result->d_ptr, outer, inner, axis_dim);
     return (PyObject *)result;
 }
 
 static PyObject *_sum_axis(PyObject *module, PyObject *args)
 {
-    return impl_axis_reduce(args, sum_axis);
+    return impl_axis_reduce(args, sum_axis, 1);
 }
 
 static PyObject *_max_axis(PyObject *module, PyObject *args)
 {
-    return impl_axis_reduce(args, max_axis);
+    return impl_axis_reduce(args, max_axis, 0);
 }
 
 /* GELU backward (grad, x, y) -> out; the other activation backprops are binary
@@ -515,12 +526,22 @@ static PyObject *_gelu_bwd(PyObject *module, PyObject *args)
 {
     _Tensor *grad, *x;
     if (!PyArg_ParseTuple(args, "O!O!", &_TensorType, &grad, &_TensorType, &x)) return NULL;
+    if (require_size(x, grad->size, "x") < 0) return NULL;
 
     _Tensor *result = alloc_result(grad->size);
     if (!result) return NULL;
 
-    gelu_bwd(grad->d_ptr, x->d_ptr, result->d_ptr, grad->size);
+    if (grad->size) gelu_bwd(grad->d_ptr, x->d_ptr, result->d_ptr, grad->size);
     return (PyObject *)result;
+}
+
+/* 0 if the gradient and optimizer state tensors all match the parameter's size,
+ * else -1 with ValueError set. `m` may be NULL (SGD has one state buffer). */
+static int check_param_state(const _Tensor *p, const _Tensor *g, const _Tensor *m, const _Tensor *v)
+{
+    if (require_size(g, p->size, "gradient") < 0) return -1;
+    if (m && require_size(m, p->size, "first-moment state") < 0) return -1;
+    return require_size(v, p->size, m ? "second-moment state" : "momentum state");
 }
 
 /* ---- fused optimizer steps (mutate p, m, v in place) ----
@@ -533,9 +554,11 @@ static PyObject *_adam_step(PyObject *module, PyObject *args)
                           &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
                           &bc1, &bc2, &weight_decay))
         return NULL;
+    if (check_param_state(p, g, m, v) < 0) return NULL;
 
-    adam_step(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps, bc1,
-              bc2, weight_decay);
+    if (p->size)
+        adam_step(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
+                  bc1, bc2, weight_decay);
     Py_RETURN_NONE;
 }
 
@@ -546,8 +569,9 @@ static PyObject *_sgd_step(PyObject *module, PyObject *args)
     if (!PyArg_ParseTuple(args, "O!O!O!ff", &_TensorType, &p, &_TensorType, &g, &_TensorType, &v,
                           &lr, &momentum))
         return NULL;
+    if (check_param_state(p, g, NULL, v) < 0) return NULL;
 
-    sgd_step(p->d_ptr, g->d_ptr, v->d_ptr, p->size, lr, momentum);
+    if (p->size) sgd_step(p->d_ptr, g->d_ptr, v->d_ptr, p->size, lr, momentum);
     Py_RETURN_NONE;
 }
 
@@ -646,10 +670,10 @@ static int _group_sync(PyObject *pl, PyObject *gl, PyObject *ml, PyObject *vl, i
 
     int mx = 0;
     for (int i = 0; i < nparams; i++) {
-        _Tensor *pp = (_Tensor *)PyList_GetItem(pl, i);
-        _Tensor *gg = (_Tensor *)PyList_GetItem(gl, i);
-        _Tensor *mm = (_Tensor *)PyList_GetItem(ml, i);
-        _Tensor *vv = (_Tensor *)PyList_GetItem(vl, i);
+        _Tensor *pp = (_Tensor *)PyList_GET_ITEM(pl, i);
+        _Tensor *gg = (_Tensor *)PyList_GET_ITEM(gl, i);
+        _Tensor *mm = (_Tensor *)PyList_GET_ITEM(ml, i);
+        _Tensor *vv = (_Tensor *)PyList_GET_ITEM(vl, i);
         hp[i] = (float *)pp->d_ptr;
         hg[i] = (float *)gg->d_ptr;
         hm[i] = (float *)mm->d_ptr;
@@ -701,11 +725,25 @@ static PyObject *_adam_step_group(PyObject *module, PyObject *args)
         PyErr_SetString(PyExc_ValueError, "grouped optimizer: parameter list lengths differ");
         return NULL;
     }
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *items[4] = {PyList_GET_ITEM(pl, i), PyList_GET_ITEM(gl, i),
+                              PyList_GET_ITEM(ml, i), PyList_GET_ITEM(vl, i)};
+        for (int j = 0; j < 4; j++) {
+            if (!PyObject_TypeCheck(items[j], &_TensorType)) {
+                PyErr_SetString(PyExc_TypeError, "grouped optimizer: lists must hold _Tensor");
+                return NULL;
+            }
+        }
+        if (check_param_state((_Tensor *)items[0], (_Tensor *)items[1], (_Tensor *)items[2],
+                              (_Tensor *)items[3]) < 0)
+            return NULL;
+    }
     int nparams = (int)n;
     if (nparams == 0) Py_RETURN_NONE;
 
     int max_size = 0;
     if (!_group_sync(pl, gl, ml, vl, nparams, &max_size)) return NULL;
+    if (max_size == 0) Py_RETURN_NONE;  // only empty parameters
 
     adam_step_group(g_group.dp, g_group.dg, g_group.dm, g_group.dv, g_group.ds, nparams, max_size,
                     lr, beta1, mb1, beta2, mb2, eps, bc1, bc2, weight_decay);
@@ -718,6 +756,8 @@ static PyObject *_adam_bias_update(PyObject *module, PyObject *args)
     _Tensor *t, *bc;
     float beta1, beta2;
     if (!PyArg_ParseTuple(args, "O!O!ff", &_TensorType, &t, &_TensorType, &bc, &beta1, &beta2))
+        return NULL;
+    if (require_size(t, 1, "step counter") < 0 || require_size(bc, 2, "bias corrections") < 0)
         return NULL;
 
     adam_bias_update(t->d_ptr, bc->d_ptr, beta1, beta2);
@@ -732,9 +772,12 @@ static PyObject *_adam_step_dev(PyObject *module, PyObject *args)
                           &_TensorType, &m, &_TensorType, &v, &lr, &beta1, &mb1, &beta2, &mb2, &eps,
                           &_TensorType, &bc, &weight_decay))
         return NULL;
+    if (check_param_state(p, g, m, v) < 0 || require_size(bc, 2, "bias corrections") < 0)
+        return NULL;
 
-    adam_step_dev(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2, eps,
-                  bc->d_ptr, weight_decay);
+    if (p->size)
+        adam_step_dev(p->d_ptr, g->d_ptr, m->d_ptr, v->d_ptr, p->size, lr, beta1, mb1, beta2, mb2,
+                      eps, bc->d_ptr, weight_decay);
     Py_RETURN_NONE;
 }
 
@@ -869,6 +912,7 @@ static PyModuleDef tensor_module = {
 
 PyMODINIT_FUNC PyInit__tensor(void)
 {
+    import_array();  // NumPy C API (used by _to_np)
     if (PyType_Ready(&_TensorType) < 0) return NULL;
 
     PyObject *m = PyModule_Create(&tensor_module);

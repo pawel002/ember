@@ -19,6 +19,10 @@ extern "C" {
 #define EMBER_INPLACE_SCALAR_OP(name, expr) void name##_scalar_inplace(float *a, float b, int size);
 #include "operators.def"
 
+/* Highest rank a broadcasted op accepts (the CUDA kernels pass the shape and
+ * strides by value in fixed-size arrays). */
+#define EMBER_MAX_BCAST_DIMS 8
+
 /* Non-element-wise operators (hand-written per backend). */
 void matmul(const float *a, const float *b, float *out, int n, int m, int k);
 /* out = a @ b + bias, with bias broadcast over rows (length m). Fuses the
@@ -27,7 +31,6 @@ void matmul_bias(const float *a, const float *b, const float *bias, float *out, 
                  int k);
 void transpose(const float *a, float *out, int n, int m);
 float sum(const float *a, int size);
-int sum_axis_product(const int *shape, int start, int end);
 void sum_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim);
 void max_axis(const float *a, float *out, int outer_stride, int inner_stride, int axis_dim);
 
