@@ -25,18 +25,14 @@ class Embedding(Layer):
     def __init__(self, num_embeddings: int, embedding_dim: int):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self.reset()
-
-    def reset(self):
-        self.idx: np.ndarray | None = None
-        self.y = None
 
         # Small uniform init (the backend has no normal sampler yet).
-        scale = 1.0 / math.sqrt(self.embedding_dim)
+        scale = 1.0 / math.sqrt(embedding_dim)
         self.weight = em.random.uniform(
-            -scale, scale, size=(self.num_embeddings, self.embedding_dim)
+            -scale, scale, size=(num_embeddings, embedding_dim)
         )
         self.grad_weight: Tensor | None = None
+        self.idx: np.ndarray | None = None  # the ids, kept for backward
 
     def parameters(self) -> list[Tensor]:
         return [self.weight]
@@ -49,13 +45,13 @@ class Embedding(Layer):
         self.idx = idx
         out_c = _embedding_fwd(self.weight._core, idx.ravel(), self.embedding_dim)
         out_shape = (*idx.shape, self.embedding_dim)
-        self.y = Tensor._from_core(out_c, out_shape, "float32")
-        return self.y
+        return Tensor._from_core(out_c, out_shape, "float32")
 
     # Input is integer ids, which have no gradient, so this returns None rather
     # than a dx tensor (unlike other layers). Embedding is a leaf/input layer.
     def backward(self, grad_y: Tensor) -> None:  # type: ignore[override]
-        assert self.idx is not None, "forward() must run before backward()"
+        if self.idx is None:
+            raise RuntimeError("forward() must run before backward()")
         dweight_c = _embedding_bwd(
             grad_y._core,
             self.idx.ravel(),

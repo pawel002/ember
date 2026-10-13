@@ -24,19 +24,16 @@ class LayerNorm(Layer):
     def __init__(self, dim: int, eps: float = 1e-5):
         self.dim = dim
         self.eps = eps
-        self.reset()
 
-    def reset(self):
-        self.x = None
-        self.y = None
-        self.mean: Tensor | None = None
-        self.rstd: Tensor | None = None
-
-        self.gamma = em.random.ones((self.dim,))
-        self.beta = em.random.zeros((self.dim,))
-
+        self.gamma = em.random.ones((dim,))
+        self.beta = em.random.zeros((dim,))
         self.grad_gamma: Tensor | None = None
         self.grad_beta: Tensor | None = None
+
+        # kept for backward: the input and its per-row statistics
+        self.x: Tensor | None = None
+        self.mean: Tensor | None = None
+        self.rstd: Tensor | None = None
 
     def parameters(self) -> list[Tensor]:
         return [self.gamma, self.beta]
@@ -45,9 +42,10 @@ class LayerNorm(Layer):
         return [self.grad_gamma, self.grad_beta]
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
+        d = x.shape[-1] if x.shape else 0
+        if d != self.dim:
+            raise ValueError(f"LayerNorm expected last dim {self.dim}, got {x.shape}")
         self.x = x
-        d = x.shape[-1]
-        assert d == self.dim, f"LayerNorm expected last dim {self.dim}, got {d}"
         n = math.prod(x.shape[:-1])
 
         out_c, mean_c, rstd_c = _layernorm_fwd(
@@ -55,12 +53,11 @@ class LayerNorm(Layer):
         )
         self.mean = Tensor._from_core(mean_c, (n,), x.dtype)
         self.rstd = Tensor._from_core(rstd_c, (n,), x.dtype)
-        self.y = Tensor._from_core(out_c, x.shape, x.dtype)
-        return self.y
+        return Tensor._from_core(out_c, x.shape, x.dtype)
 
     def backward(self, grad_y: Tensor) -> Tensor:
-        assert self.x is not None, "forward() must run before backward()"
-        assert self.mean is not None and self.rstd is not None
+        if self.x is None or self.mean is None or self.rstd is None:
+            raise RuntimeError("forward() must run before backward()")
 
         d = self.dim
         n = math.prod(self.x.shape[:-1])

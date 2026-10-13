@@ -1,30 +1,39 @@
 from abc import ABC, abstractmethod
-from itertools import chain
+from collections.abc import Sequence
 
 from ember.tensor import Tensor
 
 
 class Layer(ABC):
-    x: Tensor | None
-    y: Tensor | None
+    """Base class for all layers.
+
+    A layer implements ``forward`` (caching whatever its ``backward`` needs)
+    and ``backward`` (returning the gradient w.r.t. its input and storing the
+    gradients of its parameters). Calling a layer runs ``forward``.
+
+    Parameters are reported in a fixed order by ``parameters()``, with the
+    matching gradients from ``gradients()``:
+
+    - a layer that owns tensors directly (``Linear``, ``LayerNorm``, ...)
+      overrides both;
+    - a layer built from other layers overrides ``sublayers()`` instead, and
+      inherits ``parameters()``/``gradients()`` that concatenate its children's
+      in that order, so the two lists always line up;
+    - a layer without parameters overrides neither.
+    """
 
     def __call__(self, x: Tensor, training: bool = True) -> Tensor:
-        self.x = x
-        self._training = training
-        self.y = self.forward(x, training)
-        return self.y
+        return self.forward(x, training)
 
-    @abstractmethod
-    def reset(self) -> None:
-        raise NotImplementedError
+    def sublayers(self) -> Sequence["Layer"]:
+        """The child layers whose parameters this layer reports, in order."""
+        return ()
 
-    @abstractmethod
     def parameters(self) -> list[Tensor]:
-        raise NotImplementedError
+        return [p for layer in self.sublayers() for p in layer.parameters()]
 
-    @abstractmethod
     def gradients(self) -> list[Tensor | None]:
-        raise NotImplementedError
+        return [g for layer in self.sublayers() for g in layer.gradients()]
 
     @abstractmethod
     def forward(self, x: Tensor, training: bool) -> Tensor:
@@ -36,27 +45,15 @@ class Layer(ABC):
 
 
 class Activation(Layer):
-    def reset(self):
-        self.x = None
-        self.y = None
-
-    def parameters(self) -> list[Tensor]:
-        return []
-
-    def gradients(self) -> list[Tensor | None]:
-        return []
+    """An element-wise activation function (no parameters)."""
 
 
 class Sequential(Layer):
     def __init__(self, *layers: Layer):
-        super().__init__()
         self.layers: tuple[Layer, ...] = layers
 
-    def reset(self):
-        self.x = None
-        self.y = None
-        for layer in self.layers:
-            layer.reset()
+    def sublayers(self) -> Sequence[Layer]:
+        return self.layers
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
         for layer in self.layers:
@@ -67,9 +64,3 @@ class Sequential(Layer):
         for layer in reversed(self.layers):
             grad_y = layer.backward(grad_y)
         return grad_y
-
-    def parameters(self) -> list[Tensor]:
-        return list(chain.from_iterable(layer.parameters() for layer in self.layers))
-
-    def gradients(self) -> list[Tensor | None]:
-        return list(chain.from_iterable(layer.gradients() for layer in self.layers))

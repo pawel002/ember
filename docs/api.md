@@ -176,10 +176,16 @@ directly under `ember.nn`, e.g. `ember.nn.Linear`, `ember.nn.ReLU`.
 
 Every layer implements a common interface (defined by `ember.nn.base.Layer`):
 
-- `forward(x, training) -> Tensor` and `backward(grad_y) -> Tensor`
-- `parameters() -> list[Tensor]` and `gradients() -> list[Tensor | None]`
-- `reset()` to (re-)initialise state
-- calling the layer (`layer(x)`) runs `forward` and caches inputs/outputs.
+- `forward(x, training) -> Tensor` and `backward(grad_y) -> Tensor`; calling
+  the layer (`layer(x, training=True)`) runs `forward`, which caches what
+  `backward` needs.
+- `parameters() -> list[Tensor]` and `gradients() -> list[Tensor | None]`, in
+  the same fixed order.
+- `sublayers()`: the child layers of a composite layer. A layer built from other
+  layers only overrides this, and `parameters()`/`gradients()` concatenate its
+  children's.
+
+Parameters are created when the layer is constructed.
 
 ### Layers
 
@@ -195,7 +201,6 @@ Applies a linear transformation to the incoming data.
 
 **Methods:**
 
-- `reset()`: Re-initializes weights and biases.
 - `parameters() -> list[Tensor]`: Returns `[w, b]`.
 - `gradients() -> list[Tensor | None]`: Returns `[grad_w, grad_b]`.
 

@@ -1,4 +1,5 @@
 import math
+from collections.abc import Sequence
 
 from ember._core import (
     _attention_bwd,
@@ -39,40 +40,31 @@ class MultiHeadAttention(Layer):
     """
 
     def __init__(self, embed_dim: int, num_heads: int, causal: bool = False):
-        assert embed_dim % num_heads == 0, "embed_dim must be divisible by num_heads"
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
+            )
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
         self.scale = 1.0 / math.sqrt(self.head_dim)
         self.causal = causal
         self.fused = bool(_attention_supported(self.head_dim))
-        self.reset()
 
-    def reset(self):
-        self.x = None
-        self.y = None
         # projections
-        self.wq = Linear(self.embed_dim, self.embed_dim)
-        self.wk = Linear(self.embed_dim, self.embed_dim)
-        self.wv = Linear(self.embed_dim, self.embed_dim)
-        self.wo = Linear(self.embed_dim, self.embed_dim)
-        # cached activations for backward: the fused path keeps the untransposed
-        # projections, the composed path their head-major copies.
-        self._q = self._k = self._v = self._o = self._lse = None
-        self._qh = self._kh = self._vh = self._p = None
+        self.wq = Linear(embed_dim, embed_dim)
+        self.wk = Linear(embed_dim, embed_dim)
+        self.wv = Linear(embed_dim, embed_dim)
+        self.wo = Linear(embed_dim, embed_dim)
+
+        # Saved for backward: the fused path keeps (q, k, v, out, lse) in their
+        # natural layout, the composed path the head-major (qh, kh, vh) and the
+        # softmax p.
+        self._saved: tuple[Tensor, ...] = ()
         self._shape: tuple[int, int, int] | None = None
 
-    def parameters(self) -> list[Tensor]:
-        out: list[Tensor] = []
-        for proj in (self.wq, self.wk, self.wv, self.wo):
-            out.extend(proj.parameters())
-        return out
-
-    def gradients(self) -> list[Tensor | None]:
-        out: list[Tensor | None] = []
-        for proj in (self.wq, self.wk, self.wv, self.wo):
-            out.extend(proj.gradients())
-        return out
+    def sublayers(self) -> Sequence[Layer]:
+        return (self.wq, self.wk, self.wv, self.wo)
 
     def _to_heads(self, t: Tensor, B: int, S: int) -> Tensor:
         # (B*S, E) -> (B, S, H, dh) -> (B, H, S, dh) == (B*H, S, dh)
@@ -87,7 +79,11 @@ class MultiHeadAttention(Layer):
         return h.reshape((B * S, self.embed_dim))
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
-        self.x = x
+        if len(x.shape) != 3 or x.shape[2] != self.embed_dim:
+            raise ValueError(
+                f"MultiHeadAttention expects (batch, seq, {self.embed_dim}), "
+                f"got {x.shape}"
+            )
         B, S, E = x.shape
         H, dh = self.num_heads, self.head_dim
         BH = B * H
@@ -108,12 +104,11 @@ class MultiHeadAttention(Layer):
             o_core, lse_core = _attention_fwd(
                 q._core, k._core, v._core, BH, S, S, dh, self.scale, self.causal, H, E
             )
-            self._q, self._k, self._v = q, k, v
-            self._o = Tensor._from_core(o_core, (B * S, E), x.dtype)
-            self._lse = Tensor._from_core(lse_core, (BH, S), x.dtype)
-            out2 = self.wo(self._o, training)  # (B*S, E)
-            self.y = out2.reshape((B, S, E))
-            return self.y
+            o = Tensor._from_core(o_core, (B * S, E), x.dtype)
+            lse = Tensor._from_core(lse_core, (BH, S), x.dtype)
+            self._saved = (q, k, v, o, lse)
+            out2 = self.wo(o, training)  # (B*S, E)
+            return out2.reshape((B, S, E))
 
         qh = self._to_heads(q, B, S)
         kh = self._to_heads(k, B, S)
@@ -129,18 +124,18 @@ class MultiHeadAttention(Layer):
             p_core = _softmax_rows_causal(scores._core, BH * S, S, S)
         else:
             p_core = _softmax_rows(scores._core, BH * S, S)
-        self._p = Tensor._from_core(p_core, (BH, S, S), x.dtype)
+        p = Tensor._from_core(p_core, (BH, S, S), x.dtype)
 
         # O = P @ V  ->  (B*H, S, dh)
-        o = bmm(self._p, vh, BH, S, dh, S)
-        self._qh, self._kh, self._vh = qh, kh, vh
+        o = bmm(p, vh, BH, S, dh, S)
+        self._saved = (qh, kh, vh, p)
 
         out2 = self.wo(self._from_heads(o, B, S), training)  # (B*S, E)
-        self.y = out2.reshape((B, S, E))
-        return self.y
+        return out2.reshape((B, S, E))
 
     def backward(self, grad_y: Tensor) -> Tensor:
-        assert self._shape is not None, "forward() must run before backward()"
+        if self._shape is None:
+            raise RuntimeError("forward() must run before backward()")
         B, S, E = self._shape
         H, dh = self.num_heads, self.head_dim
         BH = B * H
@@ -149,16 +144,16 @@ class MultiHeadAttention(Layer):
         do2 = self.wo.backward(g2)  # dL/d(concat heads), (B*S, E)
 
         if self.fused:
-            assert self._o is not None and self._lse is not None
+            q, k, v, o, lse = self._saved
             # Same interleaved layout on the way in and out: dq/dk/dv land as
             # (B*S, E) and feed the projections directly.
             dq_c, dk_c, dv_c = _attention_bwd(
                 do2._core,
-                self._q._core,
-                self._k._core,
-                self._v._core,
-                self._o._core,
-                self._lse._core,
+                q._core,
+                k._core,
+                v._core,
+                o._core,
+                lse._core,
                 BH,
                 S,
                 S,
@@ -174,19 +169,20 @@ class MultiHeadAttention(Layer):
             dxv = self.wv.backward(Tensor._from_core(dv_c, (B * S, E), dtype))
             return (dxq + dxk + dxv).reshape((B, S, E))
 
+        qh, kh, vh, p = self._saved
         do = self._to_heads(do2, B, S)  # (B*H, S, dh)
 
         # dP = dO @ V^T ; dV = P^T @ dO
-        dp = bmm(do, self._vh, BH, S, S, dh, trans_a=False, trans_b=True)
-        dv = bmm(self._p, do, BH, S, dh, S, trans_a=True, trans_b=False)
+        dp = bmm(do, vh, BH, S, S, dh, trans_a=False, trans_b=True)
+        dv = bmm(p, do, BH, S, dh, S, trans_a=True, trans_b=False)
 
         # softmax backward over the key axis (P zeros make causal grads vanish)
-        dscores_core = _softmax_bwd(dp._core, self._p._core, (BH * S, S), 1)
+        dscores_core = _softmax_bwd(dp._core, p._core, (BH * S, S), 1)
         dscores = Tensor._from_core(dscores_core, (BH, S, S), grad_y.dtype)
 
         # dQ = scale * dScores @ K ; dK = scale * dScores^T @ Q
-        dq = bmm(dscores, self._kh, BH, S, dh, S, alpha=self.scale)
-        dk = bmm(dscores, self._qh, BH, S, dh, S, trans_a=True, alpha=self.scale)
+        dq = bmm(dscores, kh, BH, S, dh, S, alpha=self.scale)
+        dk = bmm(dscores, qh, BH, S, dh, S, trans_a=True, alpha=self.scale)
 
         dxq = self.wq.backward(self._from_heads(dq, B, S))
         dxk = self.wk.backward(self._from_heads(dk, B, S))

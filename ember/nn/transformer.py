@@ -1,4 +1,5 @@
 import math
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -29,27 +30,18 @@ class FeedForward(Layer):
         self.dim = dim
         self.hidden = hidden if hidden is not None else 4 * dim
         self.activation = activation
-        self.reset()
 
-    def reset(self):
-        self.x = None
-        self.y = None
-        self.fc1 = Linear(self.dim, self.hidden)
-        self.act: Layer = _ACTIVATIONS[self.activation]()
-        self.fc2 = Linear(self.hidden, self.dim)
+        self.fc1 = Linear(dim, self.hidden)
+        self.act: Layer = _ACTIVATIONS[activation]()
+        self.fc2 = Linear(self.hidden, dim)
 
-    def parameters(self) -> list[Tensor]:
-        return self.fc1.parameters() + self.fc2.parameters()
-
-    def gradients(self) -> list[Tensor | None]:
-        return self.fc1.gradients() + self.fc2.gradients()
+    def sublayers(self) -> Sequence[Layer]:
+        return (self.fc1, self.fc2)
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
-        self.x = x
         h = self.fc1(x, training)
         h = self.act(h, training)
-        self.y = self.fc2(h, training)
-        return self.y
+        return self.fc2(h, training)
 
     def backward(self, grad_y: Tensor) -> Tensor:
         g = self.fc2.backward(grad_y)
@@ -72,33 +64,19 @@ class PositionalEncoding(Layer):
         pe[:, 0::2] = np.sin(pos * div)
         pe[:, 1::2] = np.cos(pos * div[: dim // 2])  # one column fewer if dim is odd
         self._pe_np = pe
-        self.reset()
-
-    def reset(self):
-        self.x = None
-        self.y = None
+        # one device copy per sequence length (stable buffers for CUDA graphs)
         self._cache: dict[int, Tensor] = {}
 
-    def parameters(self) -> list[Tensor]:
-        return []
-
-    def gradients(self) -> list[Tensor | None]:
-        return []
-
     def _pe(self, seq: int) -> Tensor:
-        assert seq <= self.max_len, (
-            f"sequence length {seq} exceeds max_len {self.max_len}"
-        )
+        if seq > self.max_len:
+            raise ValueError(f"sequence length {seq} exceeds max_len {self.max_len}")
         if seq not in self._cache:
             self._cache[seq] = Tensor.from_np(self._pe_np[:seq])
         return self._cache[seq]
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
         # x: (batch, seq, dim); pe (seq, dim) broadcasts over the batch axis.
-        self.x = x
-        seq = x.shape[-2]
-        self.y = x + self._pe(seq)
-        return self.y
+        return x + self._pe(x.shape[-2])
 
     def backward(self, grad_y: Tensor) -> Tensor:
         return grad_y
@@ -128,40 +106,18 @@ class TransformerEncoderLayer(Layer):
         self.ff_hidden = ff_hidden if ff_hidden is not None else 4 * embed_dim
         self.causal = causal
         self.activation = activation
-        self.reset()
 
-    def reset(self):
-        self.x = None
-        self.y = None
-        self._h: Tensor | None = None
-        self.ln1 = LayerNorm(self.embed_dim)
-        self.attn = MultiHeadAttention(self.embed_dim, self.num_heads, self.causal)
-        self.ln2 = LayerNorm(self.embed_dim)
-        self.ffn = FeedForward(self.embed_dim, self.ff_hidden, self.activation)
+        self.ln1 = LayerNorm(embed_dim)
+        self.attn = MultiHeadAttention(embed_dim, num_heads, causal)
+        self.ln2 = LayerNorm(embed_dim)
+        self.ffn = FeedForward(embed_dim, self.ff_hidden, activation)
 
-    def _sublayers(self) -> tuple[Layer, ...]:
+    def sublayers(self) -> Sequence[Layer]:
         return (self.ln1, self.attn, self.ln2, self.ffn)
 
-    def parameters(self) -> list[Tensor]:
-        out: list[Tensor] = []
-        for layer in self._sublayers():
-            out.extend(layer.parameters())
-        return out
-
-    def gradients(self) -> list[Tensor | None]:
-        out: list[Tensor | None] = []
-        for layer in self._sublayers():
-            out.extend(layer.gradients())
-        return out
-
     def forward(self, x: Tensor, training: bool) -> Tensor:
-        self.x = x
-        a = self.attn(self.ln1(x, training), training)
-        h = x + a
-        f = self.ffn(self.ln2(h, training), training)
-        self._h = h
-        self.y = h + f
-        return self.y
+        h = x + self.attn(self.ln1(x, training), training)
+        return h + self.ffn(self.ln2(h, training), training)
 
     def backward(self, grad_y: Tensor) -> Tensor:
         # out = h + f, with f = ffn(ln2(h)): grad flows to h both directly and
@@ -195,48 +151,23 @@ class TransformerEncoder(Layer):
         self.causal = causal
         self.activation = activation
         self.final_norm = final_norm
-        self.reset()
 
-    def reset(self):
-        self.x = None
-        self.y = None
         self.layers = [
-            TransformerEncoderLayer(
-                self.embed_dim,
-                self.num_heads,
-                self.ff_hidden,
-                self.causal,
-                self.activation,
-            )
-            for _ in range(self.num_layers)
+            TransformerEncoderLayer(embed_dim, num_heads, ff_hidden, causal, activation)
+            for _ in range(num_layers)
         ]
-        self.final_ln = LayerNorm(self.embed_dim) if self.final_norm else None
+        self.final_ln = LayerNorm(embed_dim) if final_norm else None
 
-    def _sublayers(self) -> list[Layer]:
-        layers: list[Layer] = list(self.layers)
-        if self.final_ln is not None:
-            layers.append(self.final_ln)
-        return layers
-
-    def parameters(self) -> list[Tensor]:
-        out: list[Tensor] = []
-        for layer in self._sublayers():
-            out.extend(layer.parameters())
-        return out
-
-    def gradients(self) -> list[Tensor | None]:
-        out: list[Tensor | None] = []
-        for layer in self._sublayers():
-            out.extend(layer.gradients())
-        return out
+    def sublayers(self) -> Sequence[Layer]:
+        if self.final_ln is None:
+            return self.layers
+        return [*self.layers, self.final_ln]
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
-        self.x = x
         for layer in self.layers:
             x = layer(x, training)
         if self.final_ln is not None:
             x = self.final_ln(x, training)
-        self.y = x
         return x
 
     def backward(self, grad_y: Tensor) -> Tensor:

@@ -73,8 +73,10 @@ uv run --group dev pytest
 
 ## Adding a layer, optimizer, or loss
 
-Layers subclass `ember.nn.base.Layer` and implement `forward`, `backward`,
-`parameters`, `gradients`, and `reset`. Optimizers subclass
+Layers subclass `ember.nn.base.Layer` and implement `forward` and `backward`.
+A layer that owns parameter tensors also implements `parameters` and
+`gradients`; a layer built from other layers implements `sublayers` instead
+(see the `Layer` docstring). Optimizers subclass
 `ember.optim.base.Optimizer` and implement `apply`. Losses subclass
 `ember.loss.base.Loss` and implement `forward` and `backward`. Because these
 are pure Python built on `Tensor`, no C changes are required.
