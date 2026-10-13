@@ -21,6 +21,11 @@ void empty_device_cache(void)
     // No caching allocator on the CPU backend; malloc/free is used directly.
 }
 
+size_t device_memory_in_use(void)
+{
+    return 0;  // plain malloc/free, sizes are not tracked
+}
+
 void copy_to_device(void *dst_device, const void *src_host, size_t bytes)
 {
     memcpy(dst_device, src_host, bytes);

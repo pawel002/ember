@@ -26,6 +26,7 @@ from ember._core import (
     _get_matmul_tf32,
     _graph_destroy,
     _graph_launch,
+    _memory_allocated,
     _set_matmul_tf32,
     _sync,
 )
@@ -56,6 +57,15 @@ def sync() -> None:
 def empty_cache() -> None:
     """Release ember's cached device-memory pool back to the driver."""
     _empty_cache()
+
+
+def memory_allocated() -> int:
+    """Bytes of device memory held by live tensors.
+
+    Freed blocks that ember keeps cached for reuse are not counted (see
+    :func:`empty_cache`). Always 0 on the CPU backend.
+    """
+    return _memory_allocated()
 
 
 class Graph:
@@ -94,6 +104,7 @@ __all__ = [
     "Graph",
     "sync",
     "empty_cache",
+    "memory_allocated",
     "set_matmul_tf32",
     "get_matmul_tf32",
 ]

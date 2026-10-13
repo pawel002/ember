@@ -106,10 +106,8 @@ endfunction()
 
 add_ember_extension(_tensor "_tensor" "${CMAKE_SOURCE_DIR}/src/tensor"
                     "tensor_api.c")
-add_ember_extension(_em_random "_em_random" "${CMAKE_SOURCE_DIR}/src/random"
-                    "random_api.c")
 
 install(
-  TARGETS _tensor _em_random
+  TARGETS _tensor
   LIBRARY DESTINATION ember/_core
   RUNTIME DESTINATION ember/_core)

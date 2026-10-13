@@ -815,6 +815,11 @@ static PyObject *_empty_cache(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *_memory_allocated(PyObject *module, PyObject *args)
+{
+    return PyLong_FromSize_t(device_memory_in_use());
+}
+
 static PyObject *_set_matmul_tf32(PyObject *module, PyObject *args)
 {
     int enabled;
@@ -899,6 +904,8 @@ static PyMethodDef module_methods[] = {
     // device / CUDA-graph control
     {"_sync", (PyCFunction)_sync, METH_VARARGS, "Synchronize the device"},
     {"_empty_cache", (PyCFunction)_empty_cache, METH_VARARGS, "Release the cached device pool"},
+    {"_memory_allocated", (PyCFunction)_memory_allocated, METH_VARARGS,
+     "Bytes of device memory held by live tensors"},
     {"_set_matmul_tf32", (PyCFunction)_set_matmul_tf32, METH_VARARGS,
      "Enable/disable TF32 tensor cores for cuBLAS GEMMs"},
     {"_get_matmul_tf32", (PyCFunction)_get_matmul_tf32, METH_VARARGS,
@@ -941,8 +948,9 @@ PyMODINIT_FUNC PyInit__tensor(void)
         return NULL;
     }
 
-    /* softmax / layernorm / attention / heads permute / batched GEMM / embedding */
-    if (PyModule_AddFunctions(m, transformer_methods) < 0) {
+    /* transformer building blocks (transformer_api.c), random fills (random_api.c) */
+    if (PyModule_AddFunctions(m, transformer_methods) < 0 ||
+        PyModule_AddFunctions(m, random_methods) < 0) {
         Py_DECREF(m);
         return NULL;
     }

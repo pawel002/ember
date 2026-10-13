@@ -10,6 +10,9 @@ extern "C" {
 void *alloc_memory(size_t bytes);
 void free_memory(void *ptr);
 void empty_device_cache(void);
+/* Bytes of device memory currently held by live allocations (not counting
+ * freed blocks kept in the cache). CPU backend: always 0 (not tracked). */
+size_t device_memory_in_use(void);
 void copy_to_device(void *dst_device, const void *src_host, size_t bytes);
 void copy_from_device(void *dst_host, const void *src_device, size_t bytes);
 /* Copy host->device via a reusable pinned staging buffer with an async copy on

@@ -1,5 +1,5 @@
 /* Internal interface of the _tensor extension module, shared by its binding
- * translation units (tensor_api.c, transformer_api.c). They all link into the
+ * translation units (tensor_api.c, transformer_api.c, random_api.c). They all link into the
  * one _tensor.so, so every op shares its CUDA stream and caching allocator. */
 #ifndef EMBER_TENSOR_MODULE_H
 #define EMBER_TENSOR_MODULE_H
@@ -19,5 +19,6 @@ _Tensor *alloc_result(int size);
 
 /* Method tables of the other binding files, added to the module at init. */
 extern PyMethodDef transformer_methods[];
+extern PyMethodDef random_methods[];
 
 #endif

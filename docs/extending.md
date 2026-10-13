@@ -9,7 +9,7 @@ element-wise tensor operator** — touches as few places as possible.
 ember/                     Python front-end
   tensor/tensor.py         Tensor class + functional ops (sin, sum, ...)
   nn/, optim/, random/     layers, optimizers, samplers
-  _core/                   compiled extension modules (_tensor, _em_random) + .pyi stubs
+  _core/                   compiled extension module (_tensor) + .pyi stubs
 
 src/                       C / CUDA back-end
   core/                    memory + type definitions (CPU and GPU variants)
@@ -19,7 +19,6 @@ src/                       C / CUDA back-end
     operators_cpu.c        CPU kernels    (generated from operators.def)
     operators_gpu.cu       CUDA kernels   (generated from operators.def)
     tensor_api.c           Python bindings (generated from operators.def)
-  random/                  distributions (CPU + GPU)
 ```
 
 The CPU (`*_cpu.c`) and GPU (`*_gpu.cu`) files provide the same functions; CMake

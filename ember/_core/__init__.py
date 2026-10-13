@@ -1,4 +1,3 @@
-from ._em_random import _constant, _seed, _uniform
 from ._tensor import (
     _adam_bias_update,
     _adam_step,
@@ -15,6 +14,7 @@ from ._tensor import (
     _attention_supported,
     _begin_capture,
     _bmm,
+    _constant,
     _cos,
     _cosh,
     _ctg,
@@ -51,6 +51,7 @@ from ._tensor import (
     _max_axis,
     _max_scalar,
     _max_tensor,
+    _memory_allocated,
     _min_scalar,
     _min_tensor,
     _mul_broadcasted,
@@ -65,6 +66,7 @@ from ._tensor import (
     _rpow_scalar,
     _rsub_scalar,
     _rtruediv_scalar,
+    _seed,
     _set_matmul_tf32,
     _sgd_step,
     _sigmoid,
@@ -90,6 +92,7 @@ from ._tensor import (
     _truediv_broadcasted,
     _truediv_scalar,
     _truediv_tensor,
+    _uniform,
 )
 from ._types import (
     Scalar,
@@ -196,6 +199,7 @@ __all__ = [
     # device / CUDA-graph control
     "_sync",
     "_empty_cache",
+    "_memory_allocated",
     "_begin_capture",
     "_end_capture",
     "_graph_launch",

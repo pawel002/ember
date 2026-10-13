@@ -58,3 +58,20 @@ class TestRandomGeneration:
         b = em.random.uniform(0.0, 1.0, (50,)).to_np()
 
         np.testing.assert_array_equal(a, b)
+
+
+@pytest.mark.parametrize("make", [em.random.zeros, em.random.ones])
+def test_freed_random_tensors_release_their_memory(make):
+    # Regression: each random tensor used to allocate its buffer twice and
+    # leak the first one (and the second came from a separate allocator).
+    probe = make((1024,))
+    if em.cuda.memory_allocated() == 0:
+        pytest.skip("allocation tracking is GPU-only")
+    del probe
+
+    before = em.cuda.memory_allocated()
+    for _ in range(10):
+        t = make((1024,))
+        assert em.cuda.memory_allocated() == before + 1024 * 4
+        del t
+    assert em.cuda.memory_allocated() == before

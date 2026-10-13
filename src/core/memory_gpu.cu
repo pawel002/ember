@@ -27,6 +27,7 @@ namespace
 {
 std::unordered_map<size_t, std::vector<void *>> g_free_lists;
 std::unordered_map<void *, size_t> g_block_size;
+size_t g_in_use = 0;  // bytes handed out and not yet freed
 cudaStream_t g_stream = NULL;
 int g_tf32 = 0;
 }  // namespace
@@ -61,6 +62,7 @@ void *alloc_memory(size_t bytes)
     if (it != g_free_lists.end() && !it->second.empty()) {
         void *ptr = it->second.back();
         it->second.pop_back();
+        g_in_use += bytes;
         return ptr;
     }
 
@@ -73,6 +75,7 @@ void *alloc_memory(size_t bytes)
     }
 
     g_block_size[ptr] = bytes;
+    g_in_use += bytes;
     return ptr;
 }
 
@@ -89,6 +92,12 @@ void free_memory(void *ptr)
 
     // Return the block to its size bucket for reuse (kept in g_block_size).
     g_free_lists[it->second].push_back(ptr);
+    g_in_use -= it->second;
+}
+
+size_t device_memory_in_use(void)
+{
+    return g_in_use;
 }
 
 void empty_device_cache(void)
