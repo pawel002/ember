@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import numpy as np
 
@@ -81,7 +81,9 @@ def save(
     )
     try:
         with os.fdopen(fd, "wb") as f:
-            np.savez(f, **arrays)  # file object: no ".npz" suffix is appended
+            # A file object, so no ".npz" suffix is appended. (The cast keeps
+            # mypy from matching the arrays against savez's allow_pickle flag.)
+            np.savez(f, **cast(dict[str, Any], arrays))
         # mkstemp creates the file 0600; give it normal umask-based permissions
         umask = os.umask(0)
         os.umask(umask)
