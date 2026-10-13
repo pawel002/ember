@@ -1,13 +1,22 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.24)
 project(ember LANGUAGES C CXX)
 
-if(NOT APPLE)
+# Build the CUDA backend when a CUDA compiler is available. Pass
+# -DEMBER_CUDA=OFF to force the CPU backend on a machine that has one.
+option(EMBER_CUDA "Build the CUDA backend if a CUDA compiler is found" ON)
+
+if(EMBER_CUDA AND NOT APPLE)
   include(CheckLanguage)
   check_language(CUDA)
   if(CMAKE_CUDA_COMPILER)
     message(STATUS "CUDA compiler found. Enabling CUDA backend.")
+    # Default to the local GPU; pass -DCMAKE_CUDA_ARCHITECTURES=... to build for
+    # another one (or on a machine without a GPU). Must be set before
+    # enable_language, which otherwise picks its own default.
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+      set(CMAKE_CUDA_ARCHITECTURES "native")
+    endif()
     enable_language(CUDA)
-    set(CMAKE_CUDA_ARCHITECTURES "native")
     find_package(CUDAToolkit REQUIRED)
     set(EMBER_USE_CUDA ON)
   else()
@@ -35,8 +44,6 @@ else()
   message(STATUS "Found NumPy include path: ${NUMPY_INCLUDE_DIR}")
 endif()
 
-set(EMBER_PYCORE_DIR "${CMAKE_SOURCE_DIR}/ember/_core")
-
 macro(filter_backend_sources source_list)
   if(EMBER_USE_CUDA)
     list(FILTER ${source_list} EXCLUDE REGEX "_cpu\\.c$")
@@ -49,17 +56,15 @@ endmacro()
 # Core Library
 # ----------------------------------------------------
 file(GLOB_RECURSE EMBER_COMMON_SOURCES CONFIGURE_DEPENDS
-     "${CMAKE_SOURCE_DIR}/src/core/*.*")
+     "${CMAKE_SOURCE_DIR}/src/core/*.c" "${CMAKE_SOURCE_DIR}/src/core/*.cu")
 
 filter_backend_sources(EMBER_COMMON_SOURCES)
 
 add_library(ember_native STATIC ${EMBER_COMMON_SOURCES})
 set_target_properties(ember_native PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(ember_native PUBLIC "${CMAKE_SOURCE_DIR}/src")
-target_include_directories(ember_native PRIVATE ${NUMPY_INCLUDE_DIR})
 
 if(EMBER_USE_CUDA)
-  set_target_properties(ember_native PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
   target_link_libraries(ember_native PRIVATE CUDA::cublas)
 endif()
 
@@ -94,11 +99,7 @@ function(add_ember_extension target_name output_basename module_dir entry_file)
   target_include_directories(${target_name} PRIVATE "${CMAKE_SOURCE_DIR}/src"
                                                     ${NUMPY_INCLUDE_DIR})
 
-  # CUDA flags
   if(EMBER_USE_CUDA)
-    set_target_properties(
-      ${target_name} PROPERTIES CUDA_SEPARABLE_COMPILATION ON
-                                CUDA_RESOLVE_DEVICE_SYMBOLS ON)
     target_link_libraries(${target_name} PRIVATE CUDA::cublas)
   endif()
 endfunction()
@@ -108,19 +109,7 @@ add_ember_extension(_tensor "_tensor" "${CMAKE_SOURCE_DIR}/src/tensor"
 add_ember_extension(_em_random "_em_random" "${CMAKE_SOURCE_DIR}/src/random"
                     "random_api.c")
 
-# add_ember_extension(_nn     "_nn"     "${CMAKE_SOURCE_DIR}/src/nn" "nn_api.c")
-# add_ember_extension(_optim  "_optim" "${CMAKE_SOURCE_DIR}/src/optim"
-# "optim_api.c")
-
 install(
-  TARGETS _tensor _em_random # _nn _optim
+  TARGETS _tensor _em_random
   LIBRARY DESTINATION ember/_core
   RUNTIME DESTINATION ember/_core)
-
-install(
-  DIRECTORY "${CMAKE_SOURCE_DIR}/ember/"
-  DESTINATION ember
-  FILES_MATCHING
-  PATTERN "*.py"
-  PATTERN "*.pyi"
-  PATTERN "py.typed")

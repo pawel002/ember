@@ -4,7 +4,7 @@ Ember requires Python 3.11 or later. You can install it from source.
 
 ## Prerequisites
 
-- **CMake** (>= 3.18)
+- **CMake** (>= 3.24; `uv`/`pip` fetch a recent one automatically)
 - **C Compiler** (GCC, Clang, or MSVC)
 - **CUDA Toolkit** (Optional, for GPU support)
 
@@ -29,3 +29,18 @@ Ember requires Python 3.11 or later. You can install it from source.
    ```bash
    uv pip install -e .
    ```
+
+   The install is editable: Python changes take effect immediately, and
+   changes to the C/CUDA sources need the same command again.
+
+## Build options
+
+Pass CMake options with `-C cmake.define.<NAME>=<VALUE>`:
+
+- `EMBER_CUDA=OFF` builds the CPU backend even when a CUDA compiler is found.
+- `CMAKE_CUDA_ARCHITECTURES=<list>` sets the GPU architectures to compile for
+  (default: the GPU in the build machine, e.g. `89` for an RTX 6000 Ada).
+
+```bash
+uv pip install -e . -C cmake.define.EMBER_CUDA=OFF
+```
