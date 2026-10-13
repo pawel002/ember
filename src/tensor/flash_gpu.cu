@@ -605,9 +605,10 @@ static void fa_bwd_launch(const float *dout, const float *q, const float *k, con
     constexpr int BR = fa_cfg<DH>::BR_BWD;
     constexpr int BC = fa_cfg<DH>::BC;
 
+    // Both passes stage the same tiles, so they need the same shared memory.
+    const size_t bytes =
+        (size_t)(2 * BR * DH + 2 * DH * (BC + 1) + BR * (BC + 1) + 2 * BR) * sizeof(float);
     {
-        size_t bytes =
-            (size_t)(2 * BR * DH + 2 * DH * (BC + 1) + BR * (BC + 1) + 2 * BR) * sizeof(float);
         auto fn = k_flash_bwd_kv<DH, BR, BC>;
         fa_raise_shared((const void *)fn, bytes);
         dim3 grid((sk + BC - 1) / BC, batch);
@@ -616,8 +617,6 @@ static void fa_bwd_launch(const float *dout, const float *q, const float *k, con
         CUDA_POST_LAUNCH();
     }
     {
-        size_t bytes =
-            (size_t)(2 * BR * DH + 2 * DH * (BC + 1) + BR * (BC + 1) + 2 * BR) * sizeof(float);
         auto fn = k_flash_bwd_q<DH, BR, BC>;
         fa_raise_shared((const void *)fn, bytes);
         dim3 grid((sq + BR - 1) / BR, batch);

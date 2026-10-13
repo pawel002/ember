@@ -12,7 +12,7 @@
  * To add a new element-wise operator, add ONE line here (plus its Python-facing
  * method in ember/tensor/tensor.py and its stub in ember/_core/_tensor.pyi).
  *
- * Define any subset of the four macros before including this file; the ones you
+ * Define any subset of the macros below before including this file; the ones you
  * do not define expand to nothing. Expressions must be valid in both C and CUDA
  * (fmaxf/powf/expf/... exist in both), so a single expression drives both
  * backends.
@@ -21,6 +21,8 @@
  *   EMBER_SCALAR_OP(name, expr)     expr over a[i],  b       ->  name##_scalar
  *   EMBER_BROADCAST_OP(name, expr)  expr over a[ia], b[ib]   ->  name##_broadcasted
  *   EMBER_UNARY_OP(name, expr)      expr over a[i]           ->  name##_tensor
+ *   EMBER_INPLACE_OP(name, expr)    a[i] = expr over a, b[i] ->  name##_inplace
+ *   EMBER_INPLACE_SCALAR_OP(name, expr)  a[i] = expr over b   ->  name##_scalar_inplace
  */
 
 #ifndef EMBER_BINARY_OP
@@ -94,7 +96,7 @@ EMBER_UNARY_OP(ctgh, 1.0f / tanhf(a[i]))
  * GELU backward needs (grad, x, y) and is hand-written (see gelu_bwd). */
 EMBER_UNARY_OP(relu, fmaxf(a[i], 0.0f))
 EMBER_UNARY_OP(sigmoid, 1.0f / (1.0f + expf(-a[i])))
-EMBER_UNARY_OP(gelu, 0.5f * a[i] * (1.0f + tanhf(0.8f * a[i])))
+EMBER_UNARY_OP(gelu, 0.5f * a[i] * (1.0f + tanhf(EMBER_GELU_K * a[i])))
 
 EMBER_BINARY_OP(relu_bwd, a[i] * ((b[i] > 0.0f) ? 1.0f : 0.0f))
 EMBER_BINARY_OP(sigmoid_bwd, a[i] * b[i] * (1.0f - b[i]))

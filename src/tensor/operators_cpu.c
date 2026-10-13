@@ -129,7 +129,7 @@ void max_axis(const float *a, float *out, int outer_stride, int inner_stride, in
 
 void gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
-    const float a = 0.8f;
+    const float a = EMBER_GELU_K;
     for (int i = 0; i < n; i++) {
         float t = tanhf(a * x[i]);
         out[i] = grad[i] * 0.5f * (1.0f + t) * (1.0f + a * x[i] * (1.0f - t));

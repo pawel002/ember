@@ -182,7 +182,7 @@ void graph_destroy(void *exec)
     if (exec) GPU_ERR_CHK(cudaGraphExecDestroy((cudaGraphExec_t)exec));
 }
 
-void sync_device()
+void sync_device(void)
 {
     GPU_ERR_CHK(cudaStreamSynchronize(ember_stream()));
 }

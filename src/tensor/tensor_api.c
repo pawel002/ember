@@ -878,16 +878,16 @@ static PyMethodDef module_methods[] = {
     OP_METHOD(_adam_step_dev),
 
     // device / CUDA-graph control
-    {"_sync", (PyCFunction)_sync, METH_VARARGS, "Synchronize the device"},
-    {"_empty_cache", (PyCFunction)_empty_cache, METH_VARARGS, "Release the cached device pool"},
-    {"_memory_allocated", (PyCFunction)_memory_allocated, METH_VARARGS,
+    {"_sync", (PyCFunction)_sync, METH_NOARGS, "Synchronize the device"},
+    {"_empty_cache", (PyCFunction)_empty_cache, METH_NOARGS, "Release the cached device pool"},
+    {"_memory_allocated", (PyCFunction)_memory_allocated, METH_NOARGS,
      "Bytes of device memory held by live tensors"},
     {"_set_matmul_tf32", (PyCFunction)_set_matmul_tf32, METH_VARARGS,
      "Enable/disable TF32 tensor cores for cuBLAS GEMMs"},
-    {"_get_matmul_tf32", (PyCFunction)_get_matmul_tf32, METH_VARARGS,
+    {"_get_matmul_tf32", (PyCFunction)_get_matmul_tf32, METH_NOARGS,
      "Whether TF32 matmuls are enabled"},
-    {"_begin_capture", (PyCFunction)_begin_capture, METH_VARARGS, "Begin CUDA-graph capture"},
-    {"_end_capture", (PyCFunction)_end_capture, METH_VARARGS, "End capture; return graph handle"},
+    {"_begin_capture", (PyCFunction)_begin_capture, METH_NOARGS, "Begin CUDA-graph capture"},
+    {"_end_capture", (PyCFunction)_end_capture, METH_NOARGS, "End capture; return graph handle"},
     {"_graph_launch", (PyCFunction)_graph_launch, METH_VARARGS, "Replay a captured graph"},
     {"_graph_destroy", (PyCFunction)_graph_destroy, METH_VARARGS, "Destroy a captured graph"},
 

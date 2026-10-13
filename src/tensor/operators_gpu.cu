@@ -372,7 +372,7 @@ __global__ void k_gelu_bwd(const float *grad, const float *x, float *out, int n)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
-    const float a = 0.8f;
+    const float a = EMBER_GELU_K;
     float xi = x[i];
     float t = tanhf(a * xi);
     out[i] = grad[i] * 0.5f * (1.0f + t) * (1.0f + a * xi * (1.0f - t));

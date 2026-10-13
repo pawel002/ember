@@ -6,9 +6,11 @@
 
 #include <Python.h>
 
-#include "../core/tensor_types.h"
+#include "tensor_types.h"
 
-#define OP_METHOD(NAME) {#NAME, (PyCFunction)NAME, METH_VARARGS, "Element-wise " #NAME " operation"}
+/* Method-table entry for a binding `NAME(module, args)`. The signatures are
+ * documented in ember/_core/_tensor.pyi. */
+#define OP_METHOD(NAME) {#NAME, (PyCFunction)NAME, METH_VARARGS, NULL}
 
 /* The _Tensor Python type (defined in tensor_api.c). */
 extern PyTypeObject _TensorType;

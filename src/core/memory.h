@@ -19,7 +19,7 @@ void copy_from_device(void *dst_host, const void *src_device, size_t bytes);
  * the ember stream (faster H2D, and lets fresh batches be fed into a stable
  * device buffer between graph replays). CPU backend: a plain memcpy. */
 void copy_to_device_pinned(void *dst_device, const void *src_host, size_t bytes);
-void sync_device();
+void sync_device(void);
 
 /* Matmul precision. 0 = full fp32 (cuBLAS default), 1 = TF32 tensor cores
  * (~3x the fp32 GEMM throughput on Ampere+, 10-bit mantissa on the inputs,

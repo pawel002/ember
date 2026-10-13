@@ -4,6 +4,7 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #ifndef GPU_ERR_CHK
 #define GPU_ERR_CHK(ans)                      \
@@ -14,7 +15,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 {
     if (code != cudaSuccess) {
         fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
+        if (abort) exit(EXIT_FAILURE);
     }
 }
 #endif
@@ -28,7 +29,7 @@ inline void cublasAssert(cublasStatus_t code, const char *file, int line)
 {
     if (code != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "cuBLASassert: Error Code %d %s %d\n", code, file, line);
-        exit(code);
+        exit(EXIT_FAILURE);
     }
 }
 #endif

@@ -41,7 +41,7 @@ void copy_to_device_pinned(void *dst_device, const void *src_host, size_t bytes)
     if (bytes) memcpy(dst_device, src_host, bytes);
 }
 
-void sync_device() {}
+void sync_device(void) {}
 
 // CUDA-graph capture is a no-op on the CPU backend.
 void begin_capture(void) {}

@@ -6,7 +6,7 @@
 #include <limits.h>
 #include <stdlib.h>
 
-#include "../core/tensor_types.h"
+#include "tensor_types.h"
 
 static inline PyObject *build_nested_list(float *data, long *dims, int ndim, int current_dim,
                                           int *offset)

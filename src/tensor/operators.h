@@ -5,6 +5,12 @@
 extern "C" {
 #endif
 
+/* Ember's GELU is 0.5 * x * (1 + tanh(EMBER_GELU_K * x)): a cheap smooth
+ * approximation of x * Phi(x). It is close to, but not the same as, the "tanh"
+ * approximation in other frameworks, 0.5x(1 + tanh(sqrt(2/pi)(x + 0.044715x^3))),
+ * so expect small numeric differences when comparing against them. */
+#define EMBER_GELU_K 0.8f
+
 /* Element-wise operator declarations, generated from operators.def.
  * See operators.def for the operator table itself. */
 #define EMBER_BINARY_OP(name, expr) \

@@ -7,3 +7,5 @@ AllowShortFunctionsOnASingleLine: Empty
 BreakBeforeBraces: Linux
 PointerAlignment: Right
 Standard: Auto
+# Expands to struct fields; keep the next field on its own line.
+StatementMacros: [PyObject_HEAD]
