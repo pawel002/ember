@@ -201,8 +201,8 @@ Applies a linear transformation to the incoming data.
 
 **Methods:**
 
-- `parameters() -> list[Tensor]`: Returns `[w, b]`.
-- `gradients() -> list[Tensor | None]`: Returns `[grad_w, grad_b]`.
+- `parameters() -> list[Tensor]`: Returns `[weight, bias]`.
+- `gradients() -> list[Tensor | None]`: Returns `[grad_weight, grad_bias]`.
 
 #### `ember.nn.Dropout(p)`
 Inverted dropout. During training, zeroes each element with probability `p` and

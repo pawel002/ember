@@ -14,18 +14,18 @@ class Linear(Layer):
         self.out_features = out_features
 
         scale = 1.0 / math.sqrt(in_features)
-        self.w = em.random.uniform(-scale, scale, size=(in_features, out_features))
-        self.b = em.random.zeros(size=(out_features,))
+        self.weight = em.random.uniform(-scale, scale, size=(in_features, out_features))
+        self.bias = em.random.zeros(size=(out_features,))
 
-        self.grad_w: Tensor | None = None
-        self.grad_b: Tensor | None = None
+        self.grad_weight: Tensor | None = None
+        self.grad_bias: Tensor | None = None
         self.x: Tensor | None = None  # input, kept for backward
 
     def parameters(self) -> list[Tensor]:
-        return [self.w, self.b]
+        return [self.weight, self.bias]
 
     def gradients(self) -> list[Tensor | None]:
-        return [self.grad_w, self.grad_b]
+        return [self.grad_weight, self.grad_bias]
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
         # Any number of leading dimensions: the GEMM runs on the flattened
@@ -39,7 +39,7 @@ class Linear(Layer):
         lead = x.shape[:-1]
         n, in_f, out_f = math.prod(lead), self.in_features, self.out_features
         # Fused GEMM + bias epilogue in one call (no broadcast-add temporary).
-        core = _matmul_bias(x._core, self.w._core, self.b._core, n, out_f, in_f)
+        core = _matmul_bias(x._core, self.weight._core, self.bias._core, n, out_f, in_f)
         return Tensor._from_core(core, (*lead, out_f), x.dtype)
 
     def backward(self, grad_y: Tensor) -> Tensor:
@@ -54,9 +54,9 @@ class Linear(Layer):
         # Both products need a transposed operand; passing them as cuBLAS OP_T
         # flags reads x / w in place instead of materializing two transposed
         # copies (and their temporaries) per Linear per step.
-        self.grad_w = mm(x2, g2, in_f, out_f, n, trans_a=True)
-        self.grad_b = em.sum(g2, axis=0)
-        return mm(g2, self.w, n, in_f, out_f, trans_b=True).reshape((*lead, in_f))
+        self.grad_weight = mm(x2, g2, in_f, out_f, n, trans_a=True)
+        self.grad_bias = em.sum(g2, axis=0)
+        return mm(g2, self.weight, n, in_f, out_f, trans_b=True).reshape((*lead, in_f))
 
 
 class Dropout(Layer):

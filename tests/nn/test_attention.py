@@ -40,14 +40,14 @@ def _ref_mha(x, params, H, causal):
 
 def _params_of(mha):
     return [
-        mha.wq.w.to_np(),
-        mha.wq.b.to_np(),
-        mha.wk.w.to_np(),
-        mha.wk.b.to_np(),
-        mha.wv.w.to_np(),
-        mha.wv.b.to_np(),
-        mha.wo.w.to_np(),
-        mha.wo.b.to_np(),
+        mha.wq.weight.to_np(),
+        mha.wq.bias.to_np(),
+        mha.wk.weight.to_np(),
+        mha.wk.bias.to_np(),
+        mha.wv.weight.to_np(),
+        mha.wv.bias.to_np(),
+        mha.wo.weight.to_np(),
+        mha.wo.bias.to_np(),
     ]
 
 
@@ -95,10 +95,14 @@ class TestMultiHeadAttention:
 
         # analytic vs numeric for each projection's weight and bias
         for proj in (mha.wq, mha.wk, mha.wv, mha.wo):
-            num_w = numeric_grad_param(lambda: mha(Tensor.from_np(x)), proj.w, c)
-            num_b = numeric_grad_param(lambda: mha(Tensor.from_np(x)), proj.b, c)
+            num_w = numeric_grad_param(lambda: mha(Tensor.from_np(x)), proj.weight, c)
+            num_b = numeric_grad_param(lambda: mha(Tensor.from_np(x)), proj.bias, c)
             # re-run forward/backward to refresh analytic grads (params restored)
             mha(Tensor.from_np(x))
             mha.backward(Tensor.from_np(c))
-            np.testing.assert_allclose(proj.grad_w.to_np(), num_w, rtol=4e-2, atol=4e-2)
-            np.testing.assert_allclose(proj.grad_b.to_np(), num_b, rtol=4e-2, atol=4e-2)
+            np.testing.assert_allclose(
+                proj.grad_weight.to_np(), num_w, rtol=4e-2, atol=4e-2
+            )
+            np.testing.assert_allclose(
+                proj.grad_bias.to_np(), num_b, rtol=4e-2, atol=4e-2
+            )

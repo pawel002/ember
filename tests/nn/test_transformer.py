@@ -18,8 +18,8 @@ class TestFeedForward:
         dim, hidden = 8, 16
         x = np.random.randn(2, 3, dim).astype(np.float32)
         ff = nn.FeedForward(dim, hidden, activation="gelu")
-        w1, b1 = ff.fc1.w.to_np(), ff.fc1.b.to_np()
-        w2, b2 = ff.fc2.w.to_np(), ff.fc2.b.to_np()
+        w1, b1 = ff.fc1.weight.to_np(), ff.fc1.bias.to_np()
+        w2, b2 = ff.fc2.weight.to_np(), ff.fc2.bias.to_np()
         y = ff(Tensor.from_np(x)).to_np()
 
         x2 = x.reshape(-1, dim)

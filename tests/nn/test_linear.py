@@ -30,8 +30,8 @@ class TestLinear:
         x_t = Tensor.from_np(x_np)
         grad_y_t = Tensor.from_np(grad_y_np)
 
-        w_ref = layer.w.to_np()
-        b_ref = layer.b.to_np()
+        w_ref = layer.weight.to_np()
+        b_ref = layer.bias.to_np()
 
         # forward pass
         y_t = layer.forward(x_t, training=True)
@@ -60,25 +60,25 @@ class TestLinear:
         # gradients w.r.t. weights
         expected_grad_w = x_np.T @ grad_y_np
 
-        assert layer.grad_w is not None, "grad_w was not populated"
+        assert layer.grad_weight is not None, "grad_weight was not populated"
         np.testing.assert_allclose(
-            layer.grad_w.to_np(),
+            layer.grad_weight.to_np(),
             expected_grad_w,
             rtol=1e-4,
             atol=1e-5,
-            err_msg="Gradient w.r.t Weights (grad_w) mismatch",
+            err_msg="Gradient w.r.t Weights (grad_weight) mismatch",
         )
 
         # gradients w.r.t. bias
         expected_grad_b = np.sum(grad_y_np, axis=0)
 
-        assert layer.grad_b is not None, "grad_b was not populated"
+        assert layer.grad_bias is not None, "grad_bias was not populated"
         np.testing.assert_allclose(
-            layer.grad_b.to_np(),
+            layer.grad_bias.to_np(),
             expected_grad_b,
             rtol=1e-4,
             atol=1e-5,
-            err_msg="Gradient w.r.t Bias (grad_b) mismatch",
+            err_msg="Gradient w.r.t Bias (grad_bias) mismatch",
         )
 
 
@@ -90,8 +90,8 @@ def test_linear_accepts_leading_dims():
 
     nd = nn.Linear(4, 5)
     flat = nn.Linear(4, 5)
-    flat.w.copy_from_numpy(nd.w.to_np())
-    flat.b.copy_from_numpy(nd.b.to_np())
+    flat.weight.copy_from_numpy(nd.weight.to_np())
+    flat.bias.copy_from_numpy(nd.bias.to_np())
 
     y = nd(Tensor.from_np(x))
     assert y.shape == (2, 3, 5)
@@ -102,8 +102,10 @@ def test_linear_accepts_leading_dims():
     dx_ref = flat.backward(Tensor.from_np(g.reshape(6, 5)))
     np.testing.assert_allclose(y.to_np().reshape(6, 5), y_ref.to_np(), rtol=1e-6)
     np.testing.assert_allclose(dx.to_np().reshape(6, 4), dx_ref.to_np(), rtol=1e-6)
-    np.testing.assert_allclose(nd.grad_w.to_np(), flat.grad_w.to_np(), rtol=1e-5)
-    np.testing.assert_allclose(nd.grad_b.to_np(), flat.grad_b.to_np(), rtol=1e-5)
+    np.testing.assert_allclose(
+        nd.grad_weight.to_np(), flat.grad_weight.to_np(), rtol=1e-5
+    )
+    np.testing.assert_allclose(nd.grad_bias.to_np(), flat.grad_bias.to_np(), rtol=1e-5)
 
 
 def test_linear_rejects_wrong_feature_dim():
