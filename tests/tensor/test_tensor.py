@@ -1,3 +1,4 @@
+import itertools
 import operator
 from contextlib import nullcontext as does_not_raise
 
@@ -85,19 +86,17 @@ class TestTensorExhaustive:
             # test A op B
             self._assert_eq(em_op(t_a, t_b), np_op(np_a, np_b))
 
-    @pytest.mark.parametrize("op_name", OPS.keys())
-    @pytest.mark.parametrize("scalar", SCALARS)
+    # leave out division by zero, and powers of 0 or of large magnitude
+    SCALAR_CASES = [
+        (op, s)
+        for op, s in itertools.product(OPS, SCALARS)
+        if not (op == "div" and s == 0.0)
+        and not (op == "pow" and (abs(s) > 5 or abs(s) < 1e-5))
+    ]
+
+    @pytest.mark.parametrize("op_name, scalar", SCALAR_CASES)
     @pytest.mark.parametrize("reverse", [False, True])
     def test_binary_op_scalar(self, op_name, scalar, reverse):
-        if op_name == "div" and scalar == 0.0:
-            pytest.skip("Skipping division by zero")
-
-        if op_name == "pow" and abs(scalar) > 5:
-            pytest.skip("Skipping big powers in exponentiation")
-
-        if op_name == "pow" and abs(scalar) < 1e-5:
-            pytest.skip("Skipping power of 0")
-
         em_op, np_op = self.OPS[op_name]
         t_a, np_a = self._gen_tensor((3, 3))
 
@@ -108,12 +107,15 @@ class TestTensorExhaustive:
             # tensor op scalar
             self._assert_eq(em_op(t_a, scalar), np_op(np_a, scalar))
 
-    @pytest.mark.parametrize("op_name, em_op, np_op", UNARY_OPS)
-    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize(
+        "op_name, em_op, np_op, shape",
+        [
+            (*op, shape)
+            for op, shape in itertools.product(UNARY_OPS, SHAPES)
+            if op[0] != "T" or len(shape) == 2  # transpose is 2-D only
+        ],
+    )
     def test_unary_op(self, op_name, em_op, np_op, shape):
-        if op_name == "T" and len(shape) != 2:
-            pytest.skip("Transpose requires 2D input")
-
         t_a, np_a = self._gen_tensor(shape)
 
         if op_name in ("sqrt", "log"):

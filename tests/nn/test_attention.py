@@ -4,13 +4,8 @@ import pytest
 import ember.nn as nn
 from ember import Tensor
 
+from .._reference import softmax
 from ._gradcheck import numeric_grad_input, numeric_grad_param
-
-
-def _softmax(z, axis=-1):
-    z = z - z.max(axis, keepdims=True)
-    e = np.exp(z)
-    return e / e.sum(axis, keepdims=True)
 
 
 def _ref_mha(x, params, H, causal):
@@ -32,7 +27,7 @@ def _ref_mha(x, params, H, causal):
     if causal:
         mask = np.triu(np.ones((S, S), dtype=bool), k=1)
         scores = np.where(mask[None, None], -np.inf, scores)
-    p = _softmax(scores, -1)
+    p = softmax(scores, -1)
     o = p @ vh  # (B,H,S,dh)
     o = o.transpose(0, 2, 1, 3).reshape(B * S, E)
     return (o @ Wo + bo).reshape(B, S, E)

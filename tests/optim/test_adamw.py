@@ -4,19 +4,10 @@ import pytest
 import ember.optim as optim
 from ember import Tensor
 
+from .._reference import adam_step
+
 
 class TestAdamW:
-    def _np_step(self, p, g, m, v, t, lr, b1, b2, eps, wd):
-        m_new = b1 * m + (1 - b1) * g
-        v_new = b2 * v + (1 - b2) * (g**2)
-
-        m_hat = m_new / (1 - b1**t)
-        v_hat = v_new / (1 - b2**t)
-
-        p_new = p - lr * wd * p
-        p_new = p_new - lr * m_hat / (np.sqrt(v_hat) + eps)
-        return p_new, m_new, v_new
-
     def test_step_math(self):
         lr, b1, b2, eps, wd = 0.01, 0.9, 0.999, 1e-8, 0.1
 
@@ -30,7 +21,7 @@ class TestAdamW:
 
         for step in range(1, 4):
             opt.apply([Tensor.from_np(np_grad)])
-            np_param, np_m, np_v = self._np_step(
+            np_param, np_m, np_v = adam_step(
                 np_param, np_grad, np_m, np_v, step, lr, b1, b2, eps, wd
             )
             np.testing.assert_allclose(t_param.to_np(), np_param, rtol=1e-4, atol=1e-6)

@@ -4,20 +4,10 @@ import pytest
 import ember.optim as optim
 from ember import Tensor
 
+from .._reference import adam_step
+
 
 class TestAdam:
-    def _numpy_adam_step(self, param, grad, m, v, t, lr, b1, b2, eps):
-        m_new = b1 * m + (1 - b1) * grad
-        v_new = b2 * v + (1 - b2) * (grad**2)
-
-        m_hat = m_new / (1 - b1**t)
-        v_hat = v_new / (1 - b2**t)
-
-        update = lr * m_hat / (np.sqrt(v_hat) + eps)
-        param_new = param - update
-
-        return param_new, m_new, v_new
-
     def test_adam_initialization(self):
         shape = (2, 3)
         t_param = Tensor.from_np(np.random.randn(*shape).astype(np.float32))
@@ -46,7 +36,7 @@ class TestAdam:
 
         optimizer.apply([t_grad])
 
-        expected_param, expected_m, expected_v = self._numpy_adam_step(
+        expected_param, expected_m, expected_v = adam_step(
             np_param, np_grad, np_m, np_v, t=1, lr=lr, b1=b1, b2=b2, eps=eps
         )
 
@@ -93,7 +83,7 @@ class TestAdam:
 
             optimizer.apply([t_grad])
 
-            np_param, np_m, np_v = self._numpy_adam_step(
+            np_param, np_m, np_v = adam_step(
                 np_param, grad_np, np_m, np_v, t, lr, b1, b2, eps
             )
 

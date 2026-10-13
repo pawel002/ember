@@ -12,6 +12,8 @@ from ember._core import (
     _softmax_rows_causal,
 )
 
+from .._reference import softmax
+
 
 def _core(a):
     return Tensor.from_np(np.ascontiguousarray(a, np.float32))._core
@@ -21,24 +23,18 @@ def _np(c, shape):
     return Tensor._from_core(c, shape, "float32").to_np()
 
 
-def _softmax(z, axis):
-    z = z - z.max(axis, keepdims=True)
-    e = np.exp(z)
-    return e / e.sum(axis, keepdims=True)
-
-
 class TestFusedSoftmax:
     @pytest.mark.parametrize("axis", [0, 1, 2])
     def test_forward_axis(self, axis):
         np.random.seed(0)
         x = np.random.randn(3, 4, 5).astype(np.float32)
         out = _np(_softmax_fwd(_core(x), tuple(x.shape), axis), x.shape)
-        np.testing.assert_allclose(out, _softmax(x, axis), rtol=1e-4, atol=1e-5)
+        np.testing.assert_allclose(out, softmax(x, axis), rtol=1e-4, atol=1e-5)
 
     def test_backward_axis(self):
         np.random.seed(1)
         x = np.random.randn(3, 4, 5).astype(np.float32)
-        y = _softmax(x, -1)
+        y = softmax(x, -1)
         dy = np.random.randn(*x.shape).astype(np.float32)
         dx = _np(_softmax_bwd(_core(dy), _core(y), tuple(x.shape), 2), x.shape)
         ref = y * (dy - (dy * y).sum(-1, keepdims=True))
@@ -49,7 +45,7 @@ class TestFusedSoftmax:
         rows, d = 9, 7
         x = np.random.randn(rows, d).astype(np.float32)
         out = _np(_softmax_rows(_core(x), rows, d), (rows, d))
-        np.testing.assert_allclose(out, _softmax(x, -1), rtol=1e-4, atol=1e-5)
+        np.testing.assert_allclose(out, softmax(x, -1), rtol=1e-4, atol=1e-5)
 
     def test_rows_causal(self):
         np.random.seed(3)
