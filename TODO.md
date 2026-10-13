@@ -11,9 +11,11 @@
 - Vectorized (float4) elementwise + LayerNorm forward kernels.
 - Multi-stream overlap; grouped + capturable optimizer combined; `capture()`
   re-record on shape change.
-- `Embedding` forward/backward still upload indices with a blocking copy and a
-  `sync_device()` per call, which drains the pipeline twice a step and blocks
-  CUDA-graph capture of any model with an embedding.
+- `Embedding` forward/backward still upload indices with a blocking
+  (legacy-stream) copy, which waits for all queued work on every call and
+  blocks CUDA-graph capture of any model with an embedding. Fix: an
+  asynchronous upload on the ember stream through a pinned ring buffer
+  (an event per slot), or pass the indices as a device tensor.
 - Fused cross-entropy taking int32 targets (kills the host-side one-hot build
   and its 4.3 MB upload per batch in tiny-gpt).
 - Flash attention runs at ~15 TFLOPS dense-equivalent; a wider register tile in
@@ -32,4 +34,3 @@
 - More layers (Conv).
 - Benchmarks in CI (regression guard) and binary wheels (cibuildwheel) for the
   CPU build.
-  

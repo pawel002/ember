@@ -276,7 +276,11 @@ static PyObject *embedding_call(_Tensor *src, PyObject *idx_obj, int vocab, int 
         embedding_bwd(src->d_ptr, d_idx, result->d_ptr, n_idx, dim, vocab);
     else
         embedding_fwd(src->d_ptr, d_idx, result->d_ptr, n_idx, dim);
-    sync_device();  // done with the index buffer before it returns to the pool
+    // No sync needed before the block returns to the pool: the next kernel to
+    // reuse it runs after this one on the same stream, and every host->device
+    // copy waits for queued ember-stream work first (copy_to_device is a
+    // legacy-stream cudaMemcpy against a blocking stream; the pinned path
+    // syncs the stream explicitly).
     free_memory(d_idx);
     PyBuffer_Release(&view);
     return (PyObject *)result;
