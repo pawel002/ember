@@ -80,3 +80,32 @@ class TestLinear:
             atol=1e-5,
             err_msg="Gradient w.r.t Bias (grad_b) mismatch",
         )
+
+
+def test_linear_accepts_leading_dims():
+    """(batch, seq, in) behaves like the flattened (batch*seq, in) input."""
+    rng = np.random.default_rng(0)
+    x = rng.standard_normal((2, 3, 4)).astype(np.float32)
+    g = rng.standard_normal((2, 3, 5)).astype(np.float32)
+
+    nd = nn.Linear(4, 5)
+    flat = nn.Linear(4, 5)
+    flat.w.copy_from_numpy(nd.w.to_np())
+    flat.b.copy_from_numpy(nd.b.to_np())
+
+    y = nd(Tensor.from_np(x))
+    assert y.shape == (2, 3, 5)
+    dx = nd.backward(Tensor.from_np(g))
+    assert dx.shape == (2, 3, 4)
+
+    y_ref = flat(Tensor.from_np(x.reshape(6, 4)))
+    dx_ref = flat.backward(Tensor.from_np(g.reshape(6, 5)))
+    np.testing.assert_allclose(y.to_np().reshape(6, 5), y_ref.to_np(), rtol=1e-6)
+    np.testing.assert_allclose(dx.to_np().reshape(6, 4), dx_ref.to_np(), rtol=1e-6)
+    np.testing.assert_allclose(nd.grad_w.to_np(), flat.grad_w.to_np(), rtol=1e-5)
+    np.testing.assert_allclose(nd.grad_b.to_np(), flat.grad_b.to_np(), rtol=1e-5)
+
+
+def test_linear_rejects_wrong_feature_dim():
+    with pytest.raises(ValueError, match=r"\(\.\.\., 4\)"):
+        nn.Linear(4, 5)(Tensor.from_np(np.ones((3, 6), np.float32)))

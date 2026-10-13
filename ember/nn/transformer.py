@@ -16,9 +16,8 @@ _ACTIVATIONS: dict[str, type[Layer]] = {"gelu": GELU, "relu": ReLU}
 class FeedForward(Layer):
     """Position-wise feed-forward network: Linear -> activation -> Linear.
 
-    Applied independently to every position of a ``(batch, seq, dim)`` input
-    (the two Linear layers act on the flattened ``(batch*seq, dim)`` view).
-    ``hidden`` defaults to ``4 * dim`` (the usual transformer expansion).
+    Applied independently to every position of a ``(..., dim)`` input, e.g.
+    ``(batch, seq, dim)``. ``hidden`` defaults to ``4 * dim`` (the usual transformer expansion).
     """
 
     def __init__(self, dim: int, hidden: int | None = None, activation: str = "gelu"):
@@ -35,7 +34,6 @@ class FeedForward(Layer):
     def reset(self):
         self.x = None
         self.y = None
-        self._shape: tuple[int, ...] | None = None
         self.fc1 = Linear(self.dim, self.hidden)
         self.act: Layer = _ACTIVATIONS[self.activation]()
         self.fc2 = Linear(self.hidden, self.dim)
@@ -48,23 +46,15 @@ class FeedForward(Layer):
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
         self.x = x
-        self._shape = x.shape
-        n = math.prod(x.shape[:-1])
-        h = x.reshape((n, self.dim))
-        h = self.fc1(h, training)
+        h = self.fc1(x, training)
         h = self.act(h, training)
-        h = self.fc2(h, training)
-        self.y = h.reshape(x.shape)
+        self.y = self.fc2(h, training)
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
-        assert self._shape is not None, "forward() must run before backward()"
-        n = math.prod(self._shape[:-1])
-        g = grad_y.reshape((n, self.dim))
-        g = self.fc2.backward(g)
+        g = self.fc2.backward(grad_y)
         g = self.act.backward(g)
-        g = self.fc1.backward(g)
-        return g.reshape(self._shape)
+        return self.fc1.backward(g)
 
 
 class PositionalEncoding(Layer):

@@ -191,6 +191,7 @@ Applies a linear transformation to the incoming data.
   - `out_features` (int): Size of each output sample.
 - **Forward:** $y = x W + b$
   - Where $W$ is weight matrix of shape `(in_features, out_features)` and $b$ is bias of shape `(out_features,)`.
+  - `x` has shape `(..., in_features)`: any leading dimensions (e.g. `(batch, seq)`) are kept, and the output has shape `(..., out_features)`.
 
 **Methods:**
 

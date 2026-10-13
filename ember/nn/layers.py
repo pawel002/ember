@@ -45,26 +45,36 @@ class Linear(Layer):
         return [self.grad_w, self.grad_b]
 
     def forward(self, x: Tensor, training: bool) -> Tensor:
+        # Any number of leading dimensions: the GEMM runs on the flattened
+        # (n, in_features) view (a free reshape), e.g. (batch, seq, dim).
+        if not x.shape or x.shape[-1] != self.in_features:
+            raise ValueError(
+                f"Linear expects inputs of shape (..., {self.in_features}), "
+                f"got {x.shape}"
+            )
         self.x = x
-        n, in_f = x.shape
-        out_f = self.out_features
+        lead = x.shape[:-1]
+        n, in_f, out_f = math.prod(lead), self.in_features, self.out_features
         # Fused GEMM + bias epilogue in one call (no broadcast-add temporary).
         core = _matmul_bias(x._core, self.w._core, self.b._core, n, out_f, in_f)
-        self.y = Tensor._from_core(core, (n, out_f), x.dtype)
+        self.y = Tensor._from_core(core, (*lead, out_f), x.dtype)
         return self.y
 
     def backward(self, grad_y: Tensor) -> Tensor:
-        assert self.x is not None, "forward() must run before backward()"
+        if self.x is None:
+            raise RuntimeError("forward() must run before backward()")
 
-        n, in_f = self.x.shape
-        out_f = self.out_features
+        lead = self.x.shape[:-1]
+        n, in_f, out_f = math.prod(lead), self.in_features, self.out_features
+        x2 = self.x.reshape((n, in_f))
+        g2 = grad_y.reshape((n, out_f))
 
         # Both products need a transposed operand; passing them as cuBLAS OP_T
         # flags reads x / w in place instead of materializing two transposed
         # copies (and their temporaries) per Linear per step.
-        self.grad_w = mm(self.x, grad_y, in_f, out_f, n, trans_a=True)
-        self.grad_b = em.sum(grad_y, axis=0)  # type: ignore
-        return mm(grad_y, self.w, n, in_f, out_f, trans_b=True)
+        self.grad_w = mm(x2, g2, in_f, out_f, n, trans_a=True)
+        self.grad_b = em.sum(g2, axis=0)
+        return mm(g2, self.w, n, in_f, out_f, trans_b=True).reshape((*lead, in_f))
 
 
 class Dropout(Layer):
