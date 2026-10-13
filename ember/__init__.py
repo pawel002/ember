@@ -1,5 +1,6 @@
 # expose submodules
 from . import cuda, data, loss, nn, optim, random
+from .checkpoint import load, save
 from .tensor import (
     T,
     Tensor,
@@ -40,6 +41,9 @@ __all__ = [
     "sum",
     "softmax",
     "sqrt",
+    # checkpoints
+    "save",
+    "load",
     # modules
     "random",
     "nn",

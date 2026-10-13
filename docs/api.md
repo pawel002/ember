@@ -305,6 +305,10 @@ optimizers implement `ember.optim.base.Optimizer`:
 
 - `__init__(parameters, ...)`
 - `apply(gradients: list[Tensor]) -> None`
+- `state_dict() -> dict` / `load_state_dict(state)`: snapshot and restore the
+  optimizer's state (momentum / moment buffers and the step counter) as NumPy
+  arrays. Hyperparameters such as `lr` are not part of the state. Usually you
+  call `ember.save` / `ember.load` instead (see [Checkpoints](#checkpoints)).
 
 #### `ember.optim.SGD(parameters, lr=0.01, momentum=0.0)`
 Stochastic gradient descent with optional (Polyak) momentum: `v = momentum*v + g`,
@@ -334,6 +338,55 @@ import ember.optim as optim
 opt = optim.Adam(model.parameters(), lr=1e-3)
 # ... after a forward/backward pass ...
 opt.apply(model.gradients())
+```
+
+---
+
+## Checkpoints
+
+#### `ember.save(path, model=None, optimizer=None, **metadata)`
+Writes the model's parameters and/or the optimizer's state to `path`.
+
+- **Arguments:**
+  - `path` (str | PathLike): Output file. It is written to exactly this path,
+    with no `.npz` suffix added.
+  - `model`: Anything with a `parameters()` method (any `nn.Layer`, or your own
+    model class).
+  - `optimizer` (Optimizer): An `ember.optim` optimizer.
+  - `**metadata`: Extra values to store with the checkpoint (step, epoch,
+    config, ...). They must be JSON-serializable.
+
+The save goes to a temporary file that is then renamed over `path`, so an
+interrupted save never leaves a half-written checkpoint.
+
+#### `ember.load(path, model=None, optimizer=None) -> dict`
+Restores `model` and/or `optimizer` from a checkpoint and returns the saved
+`**metadata`.
+
+Parameters are matched by their position in `model.parameters()`, so build the
+model with the same architecture first. Values are copied **in place** into the
+existing tensors. An optimizer built over `model.parameters()`, or a step
+captured with `ember.cuda.capture`, keeps working without being rebuilt. All
+shapes are checked before anything is written: a mismatch raises `ValueError`
+and leaves the model and optimizer unchanged.
+
+The format is a plain `.npz` archive: float32 arrays plus a JSON header. It is
+read with `allow_pickle=False`, so loading a checkpoint never runs code from it.
+You can also inspect a checkpoint with `numpy.load`.
+
+```python
+import ember
+
+# save during training
+ember.save("ckpt.npz", model, opt, step=step)
+
+# resume: build the same model + optimizer, then load into them
+model = build_model()
+opt = ember.optim.AdamW(model.parameters(), lr=1e-3)
+step = ember.load("ckpt.npz", model, opt)["step"]
+
+# inference only
+ember.load("ckpt.npz", model)
 ```
 
 ---

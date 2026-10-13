@@ -1,3 +1,5 @@
+import numpy as np
+
 import ember as em
 from ember._core import (
     _adam_bias_update,
@@ -52,6 +54,20 @@ class Adam(Optimizer):
             # device-resident step counter (t) and bias corrections [bc1, bc2]
             self._t = em.random.zeros((1,))
             self._bc = em.random.zeros((2,))
+
+    def _state_tensors(self) -> dict[str, list[Tensor]]:
+        return {"means": self.means, "variances": self.variances}
+
+    def _state_scalars(self) -> dict[str, int | float]:
+        # In capturable mode the step counter lives on the device (as float32).
+        t = int(round(float(self._t.to_np()[0]))) if self.capturable else self.t
+        return {"t": t}
+
+    def _load_state_scalars(self, scalars: dict[str, int | float]) -> None:
+        self.t = int(scalars["t"])
+        if self.capturable:
+            # the bias corrections are recomputed from _t at the next step
+            self._t.copy_from_numpy(np.array([self.t], dtype=np.float32))
 
     def apply(self, gradients: list[Tensor]):
         if len(gradients) != len(self.parameters):

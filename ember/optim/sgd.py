@@ -23,6 +23,9 @@ class SGD(Optimizer):
         self.momentum = momentum
         self.velocities = [em.random.zeros(p.shape) for p in self.parameters]
 
+    def _state_tensors(self) -> dict[str, list[Tensor]]:
+        return {"velocities": self.velocities}
+
     def apply(self, gradients: list[Tensor]) -> None:
         if len(gradients) != len(self.parameters):
             raise ValueError(
