@@ -7,15 +7,8 @@ import ember.nn as nn
 import ember.optim as optim
 from ember import Tensor
 
-
-def _graphs_available() -> bool:
-    # On the CPU backend capture is a no-op and returns a null (0) handle.
-    probe = em.cuda.capture(lambda: None)
-    return probe._handle != 0
-
-
 pytestmark = pytest.mark.skipif(
-    not _graphs_available(), reason="CUDA graphs unavailable (CPU backend)"
+    not em.cuda.is_available(), reason="CUDA graphs unavailable (CPU backend)"
 )
 
 
@@ -71,3 +64,23 @@ def test_graph_training_matches_eager():
     w_graph = m_g.parameters()[0].to_np()
 
     np.testing.assert_allclose(w_graph, w_eager, rtol=1e-4, atol=1e-5)
+
+
+def test_failed_capture_leaves_the_stream_usable():
+    t = Tensor.from_np(np.zeros((8,), dtype=np.float32))
+
+    def bad_step():
+        t.__iadd__(1.0)
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        em.cuda.capture(bad_step, warmup=0)
+
+    # Eager work and a fresh capture still work afterwards. Captured ops are
+    # recorded, not run: the failed capture added nothing, so this is one eager
+    # increment plus one replay.
+    t += 1.0
+    graph = em.cuda.capture(lambda: t.__iadd__(1.0), warmup=0)
+    graph()
+    em.cuda.sync()
+    np.testing.assert_allclose(t.to_np(), np.full(8, 2.0))

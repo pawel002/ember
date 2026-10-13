@@ -26,6 +26,7 @@ from ember._core import (
     _get_matmul_tf32,
     _graph_destroy,
     _graph_launch,
+    _is_cuda,
     _memory_allocated,
     _set_matmul_tf32,
     _sync,
@@ -47,6 +48,12 @@ def set_matmul_tf32(enabled: bool) -> None:
 def get_matmul_tf32() -> bool:
     """Whether TF32 matmuls are enabled (see :func:`set_matmul_tf32`)."""
     return _get_matmul_tf32()
+
+
+def is_available() -> bool:
+    """Whether ember was built with the CUDA backend (otherwise the functions
+    in this module are no-ops or report CPU defaults)."""
+    return _is_cuda()
 
 
 def sync() -> None:
@@ -75,10 +82,10 @@ class Graph:
         self._handle = handle
 
     def replay(self) -> None:
+        """Launch the captured work (asynchronously; see :func:`sync`)."""
         _graph_launch(self._handle)
 
-    def __call__(self) -> None:
-        _graph_launch(self._handle)
+    __call__ = replay
 
     def __del__(self):
         handle = getattr(self, "_handle", 0)
@@ -95,13 +102,20 @@ def capture(step: Callable[[], object], warmup: int = 3) -> Graph:
     sync()
 
     _begin_capture()
-    step()
+    try:
+        step()
+    except BaseException:
+        # Leave capture mode before re-raising, or every later op on the
+        # stream would fail. The partial graph is discarded.
+        _graph_destroy(_end_capture())
+        raise
     return Graph(_end_capture())
 
 
 __all__ = [
     "capture",
     "Graph",
+    "is_available",
     "sync",
     "empty_cache",
     "memory_allocated",

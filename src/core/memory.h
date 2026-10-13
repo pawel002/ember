@@ -22,6 +22,8 @@ void copy_device_to_device(void *dst_device, const void *src_device, size_t byte
  * device buffer between graph replays). CPU backend: a plain memcpy. */
 void copy_to_device_pinned(void *dst_device, const void *src_host, size_t bytes);
 void sync_device(void);
+/* 1 if this is the CUDA backend, 0 for the CPU backend. */
+int backend_is_cuda(void);
 
 /* Matmul precision. 0 = full fp32 (cuBLAS default), 1 = TF32 tensor cores
  * (~3x the fp32 GEMM throughput on Ampere+, 10-bit mantissa on the inputs,

@@ -194,6 +194,11 @@ void sync_device(void)
     GPU_ERR_CHK(cudaStreamSynchronize(ember_stream()));
 }
 
+int backend_is_cuda(void)
+{
+    return 1;
+}
+
 void set_matmul_tf32(int enabled)
 {
     g_tf32 = enabled ? 1 : 0;

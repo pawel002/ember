@@ -18,13 +18,7 @@ from ember._core import _attention_bwd, _attention_fwd, _attention_supported
 SUPPORTED_HEAD_DIMS = [16, 32, 64, 128]
 
 
-def _cuda_backend() -> bool:
-    # Same probe as tests/tensor/test_cuda_graph.py: on the CPU backend capture
-    # is a no-op and hands back a null (0) graph handle.
-    return em.cuda.capture(lambda: None)._handle != 0
-
-
-CUDA_BACKEND = _cuda_backend()
+CUDA_BACKEND = em.cuda.is_available()
 
 
 def _ref(q, k, v, dout, scale, causal):

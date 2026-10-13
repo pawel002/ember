@@ -424,11 +424,18 @@ grad = criterion.backward()  # Tensor, dL/dlogits
 
 ## Device control (`ember.cuda`)
 
+#### `ember.cuda.is_available()`
+Whether ember was built with the CUDA backend.
+
 #### `ember.cuda.sync()`
 Block until all queued GPU work has finished.
 
 #### `ember.cuda.empty_cache()`
 Release ember's cached device-memory pool back to the driver.
+
+#### `ember.cuda.memory_allocated() -> int`
+Bytes of device memory held by live tensors. Freed blocks that ember keeps
+cached for reuse are not counted. Always 0 on the CPU backend.
 
 #### `ember.cuda.set_matmul_tf32(enabled)` / `ember.cuda.get_matmul_tf32()`
 Run cuBLAS GEMMs on the TF32 tensor cores instead of the fp32 pipeline —
@@ -439,7 +446,8 @@ reason: it is a real precision change.
 
 #### `ember.cuda.capture(step, warmup=3)`
 Record a fixed-shape training step into a replayable `Graph`. See
-[Performance](performance.md) for the requirements.
+[Performance](performance.md) for the requirements. If `step` raises during
+capture, the capture is abandoned and the exception propagates.
 
 On the CPU backend these are no-ops (`set_matmul_tf32` stores the flag but
 nothing reads it).

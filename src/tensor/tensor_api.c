@@ -724,6 +724,11 @@ static PyObject *_empty_cache(PyObject *module, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *_is_cuda(PyObject *module, PyObject *args)
+{
+    return PyBool_FromLong(backend_is_cuda());
+}
+
 static PyObject *_memory_allocated(PyObject *module, PyObject *args)
 {
     return PyLong_FromSize_t(device_memory_in_use());
@@ -809,6 +814,7 @@ static PyMethodDef module_methods[] = {
     // device / CUDA-graph control
     {"_sync", (PyCFunction)_sync, METH_NOARGS, "Synchronize the device"},
     {"_empty_cache", (PyCFunction)_empty_cache, METH_NOARGS, "Release the cached device pool"},
+    {"_is_cuda", (PyCFunction)_is_cuda, METH_NOARGS, "Whether this is the CUDA backend"},
     {"_memory_allocated", (PyCFunction)_memory_allocated, METH_NOARGS,
      "Bytes of device memory held by live tensors"},
     {"_set_matmul_tf32", (PyCFunction)_set_matmul_tf32, METH_VARARGS,
